@@ -24,7 +24,6 @@
 #include "solver.h"
 #include "clausecleaner.h"
 #include "time_mem.h"
-#include "solutionextender.h"
 #include "clauseallocator.h"
 #include "sqlstats.h"
 #include "sccfinder.h"
@@ -762,21 +761,20 @@ void VarReplacer::set_sub_var_during_solution_extension(uint32_t var, const uint
     const lbool to_set = solver->model[var] ^ table[sub_var].sign();
     const uint32_t sub_var_inter = solver->map_outer_to_inter(sub_var);
     assert(solver->varData[sub_var_inter].removed == Removed::replaced);
-    assert(solver->model[sub_var] == l_Undef);
+    assert(solver->model_value(sub_var) == l_Undef);
 
-    if (solver->conf.verbosity) {
+    if (solver->conf.verbosity > 10) {
         cout << "Varreplace-extend: setting outer " << sub_var+1
         << " to " << to_set << " because of " << var+1 << endl;
     }
     solver->model[sub_var] = to_set;
 }
 
+//NOTE: 'var' is OUTER
 void VarReplacer::extend_model(const uint32_t var)
 {
     assert(solver->model[var] != l_Undef);
-    map<uint32_t, vector<uint32_t> >::const_iterator it
-        = reverseTable.find(var);
-
+    auto it = reverseTable.find(var);
     if (it == reverseTable.end())
         return;
 
@@ -787,29 +785,38 @@ void VarReplacer::extend_model(const uint32_t var)
     }
 }
 
-void VarReplacer::extend_model()
+void VarReplacer::extend_model_already_set()
 {
-    if (solver->conf.verbosity >= 6) {
-        cout << "c " << __func__ << " called" << endl;
-    }
-
     assert(solver->model.size() == solver->nVarsOuter());
-    for (map<uint32_t, vector<uint32_t> >::const_iterator
-        it = reverseTable.begin() , end = reverseTable.end()
+    for (auto it = reverseTable.begin() , end = reverseTable.end()
         ; it != end
         ; ++it
     ) {
-        if (solver->model[it->first] == l_Undef)
+        if (solver->model_value(it->first) == l_Undef) {
             continue;
+        }
 
         for(const uint32_t sub_var: it->second)
         {
             set_sub_var_during_solution_extension(it->first, sub_var);
         }
     }
+}
 
-    if (solver->conf.verbosity >= 6) {
-        cout << "c " << __func__ << " ended" << endl;
+void VarReplacer::extend_model_set_undef()
+{
+    assert(solver->model.size() == solver->nVarsOuter());
+    for (auto it = reverseTable.begin() , end = reverseTable.end()
+        ; it != end
+        ; ++it
+    ) {
+        if (solver->model_value(it->first) == l_Undef) {
+            solver->model[it->first] = l_False;
+            for(const uint32_t sub_var: it->second)
+            {
+                set_sub_var_during_solution_extension(it->first, sub_var);
+            }
+        }
     }
 }
 

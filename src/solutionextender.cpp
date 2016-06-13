@@ -39,8 +39,8 @@ void SolutionExtender::extend()
     var_has_been_blocked.resize(solver->nVarsOuter(), false);
     //cout << "c [extend] start num unset: " << solver->count_num_unset_model() << endl;
 
-    if (solver->varReplacer)
-        solver->varReplacer->extend_model();
+    //Extend variables already set
+    solver->varReplacer->extend_model_already_set();
     //cout << "aft varreplacer unset: " << count_num_unset_model() << endl;
 
     if (simplifier)
@@ -56,6 +56,9 @@ void SolutionExtender::extend()
             solver->model[i] = l_False;
         }
     }
+
+    //All variables, not just those set
+    solver->varReplacer->extend_model_set_undef();
 }
 
 bool SolutionExtender::satisfied(const vector< Lit >& lits) const
