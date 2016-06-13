@@ -154,7 +154,8 @@ bool DimacsParser<C>::readClause(C& in)
             solver->new_var();
         }
         lits.push_back( (parsed_lit > 0) ? Lit(var, false) : Lit(var, true) );
-        if (*in != ' ') {
+	// BD: fixed this to tolerate '\n'
+        if (*in != ' ' && *in != '\n') {
             std::cerr
             << "ERROR! "
             << "After last element on the line must be 0" << endl

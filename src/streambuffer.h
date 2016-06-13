@@ -80,8 +80,9 @@ public:
 
     void skipWhitespace()
     {
+      // BD: changed this to allow '\n' in DIMACS clauses
         char c = value();
-        while (c == '\t' || c == '\r' || c == ' ') {
+        while (c == '\t' || c == '\r' || c == ' ' || c == '\n') {
             advance();
             c = value();
         }
@@ -103,6 +104,10 @@ public:
     {
         for (;;) {
             if (value() == EOF || value() == '\0') return true;
+	    if (value() == ' ') { // BD: tolerate spaces before '\n'
+	      advance();
+	      continue;
+	    }
             if (value() == '\n') {
                 advance();
                 return true;
