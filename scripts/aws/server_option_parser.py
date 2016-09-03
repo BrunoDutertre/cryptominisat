@@ -63,7 +63,7 @@ For the --solver options you can give:
                       )
 
     parser.add_option("--solver",
-                      default="cryptominisat/build/cryptominisat4",
+                      default="cryptominisat/build/cryptominisat5",
                       dest="solver",
                       help="Solver executable"
                       "[default: %default]",
@@ -101,6 +101,10 @@ For the --solver options you can give:
 
     parser.add_option("--stats", default=False, dest="stats",
                       action="store_true", help="Use STATS and get SQLITE data"
+                      )
+
+    parser.add_option("--gauss", default=False, dest="gauss",
+                      action="store_true", help="Use GAUSS"
                       )
 
     parser.add_option("--logfile", dest="logfile_name", type=str,

@@ -273,7 +273,7 @@ public:
     void check_elimed_vars_are_unassigned() const;
     bool getAnythingHasBeenBlocked() const;
     void freeXorMem();
-    void save_state(SimpleOutFile& f) const;
+    void save_state(SimpleOutFile& f);
     void load_state(SimpleInFile& f);
     vector<ClOffset> sub_str_with;
     TouchListLit impl_sub_lits;
@@ -285,6 +285,7 @@ public:
         , bool only_set_is_removed = false
     );
     void free_clauses_to_free();
+    void cleanBlockedClausesIfDirty();
 
 private:
     friend class SubsumeStrengthen;
@@ -526,6 +527,7 @@ private:
     bool blockedMapBuilt;
     void buildBlockedMap();
     void cleanBlockedClauses();
+    bool can_remove_blocked_clauses = false;
 
     //validity checking
     void sanityCheckElimedVars();

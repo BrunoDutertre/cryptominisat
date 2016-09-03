@@ -4,15 +4,22 @@ if(NOT (CMAKE_MAJOR_VERSION LESS 2))
     if(POLICY CMP0022)
         cmake_policy(SET CMP0022 OLD)
     endif()
+
     if(POLICY CMP0048)
         cmake_policy(SET CMP0048 OLD)
     endif()
+
     if(POLICY CMP0046)
         cmake_policy(SET CMP0046 OLD)
     endif()
 
     if(POLICY CMP0026)
         cmake_policy(SET CMP0026 OLD)
+    endif()
+
+    if(POLICY CMP0048)
+        #policy for VERSION in cmake 3.0
+        cmake_policy(SET CMP0048 OLD)
     endif()
 endif()
 
@@ -52,7 +59,7 @@ foreach (build_config ${build_types})
     endforeach()
 endforeach()
 
-PROJECT(cryptominisat4)
+PROJECT(cryptominisat5)
 
 SET(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake) #m4-extra contains some library search cmake stuff
 
@@ -97,7 +104,7 @@ if (SANITIZE)
     #add_cxx_flag("-Wsign-conversion")
     #add_cxx_flag("-Wconversion")
     add_cxx_flag("-Wdeprecated")
-    #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie")
+    #set(CMAKE_EXE_LINKER_FLAGS " ${CMAKE_EXE_LINKER_FLAGS} -pie ")
 endif()
 
 include(CheckCXXCompilerFlag)
@@ -201,7 +208,7 @@ if (COVERAGE)
 endif()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    set(CMAKE_EXE_LINKER_FLAGS " -Wl,--discard-all -Wl,--build-id=sha1")
+    set(CMAKE_EXE_LINKER_FLAGS " ${CMAKE_EXE_LINKER_FLAGS} -Wl,--discard-all -Wl,--build-id=sha1")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -211,7 +218,8 @@ option(STATICCOMPILE "Compile to static executable (only works on linux)" OFF)
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     if(STATICCOMPILE)
         MESSAGE(STATUS "Compiling for static library use")
-        set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -static")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -static ")
+        #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static ")
         SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
         set(NOMYSQL ON)
     else()
@@ -237,13 +245,8 @@ if(WIN32 AND NOT CYGWIN)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /INCREMENTAL:NO")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /PDBCOMPRESS")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:1572864")
-
-    # RelWithDebInfo specific flags
-    # set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /DEBUG") # /OPT:REF /OPT:ICF
-    # set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /DEBUG")
-    # set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG")
 else()
-  set(DEF_INSTALL_CMAKE_DIR lib/cmake/cryptominisat4)
+  set(DEF_INSTALL_CMAKE_DIR lib/cmake/cryptominisat5)
 endif()
 
 option(SLOW_DEBUG "Use more debug flags" OFF)
@@ -271,7 +274,7 @@ if (GIT_EXECUTABLE)
 else()
   set(GIT_SHA "GIT-hash-notfound")
 endif()
-set(CMS_FULL_VERSION "4.5.3")
+set(CMS_FULL_VERSION "5.0.0")
 
 string(REPLACE "." ";" CMS_FULL_VERSION_LIST ${CMS_FULL_VERSION})
 SetVersionNumber("PROJECT" ${CMS_FULL_VERSION_LIST})
@@ -281,6 +284,7 @@ MESSAGE(STATUS "PROJECT_VERSION_MINOR: ${PROJECT_VERSION_MINOR}")
 MESSAGE(STATUS "PROJECT_VERSION_PATCH: ${PROJECT_VERSION_PATCH}")
 
 option(ONLY_SIMPLE "Only build very simplistic executable -- no Boost needed" OFF)
+
 if (NOT ONLY_SIMPLE)
     set (boost_components "")
     set(boost_components ${boost_components} program_options)
@@ -324,6 +328,7 @@ ENDIF ()
 # Look for ZLIB (For reading zipped CNFs)
 # -----------------------------------------------------------------------------
 option(NOZLIB "Don't use zlib" OFF)
+
 if (NOT NOZLIB)
     find_package(ZLIB)
     IF (ZLIB_FOUND)
@@ -378,28 +383,29 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
 
 macro(cmsat_add_public_header LIBTARGET HEADER)
-    if(EXISTS "${HEADER}")
-        # Get existing PUBLIC_HEADER
-        get_target_property(EXISTING_PUBLIC_HEADERS ${LIBTARGET} PUBLIC_HEADER)
-        if(EXISTING_PUBLIC_HEADERS)
-            list(APPEND EXISTING_PUBLIC_HEADERS "${HEADER}")
-        else()
-            # Do not append to empty list
-            set(EXISTING_PUBLIC_HEADERS "${HEADER}")
-        endif()
-        set_target_properties(${LIBTARGET}
-                              PROPERTIES
-                              PUBLIC_HEADER "${EXISTING_PUBLIC_HEADERS}"
-                             )
+    get_target_property(EXISTING_PUBLIC_HEADERS ${LIBTARGET} PUBLIC_HEADER)
+    if(EXISTING_PUBLIC_HEADERS)
+        list(APPEND EXISTING_PUBLIC_HEADERS "${HEADER}")
     else()
-        message(FATAL_ERROR "Cannot add public header, file ${HEADER} does not exist.")
+        # Do not append to empty list
+        set(EXISTING_PUBLIC_HEADERS "${HEADER}")
     endif()
+    set_target_properties(
+        ${LIBTARGET}
+        PROPERTIES
+        PUBLIC_HEADER "${EXISTING_PUBLIC_HEADERS}"
+     )
 endmacro()
 
 # -----------------------------------------------------------------------------
 # Look for python
 # -----------------------------------------------------------------------------
 option(ENABLE_PYTHON_INTERFACE "Enable Python interface" ON)
+
+if (STATICCOMPILE)
+    set(ENABLE_PYTHON_INTERFACE OFF)
+endif()
+
 find_package (PythonInterp 2.7)
 find_package (PythonLibs 2.7)
 if (PYTHON_EXECUTABLE AND PYTHON_LIBRARY AND PYTHON_INCLUDE_DIR AND NOT WIN32)
@@ -408,12 +414,13 @@ if (PYTHON_EXECUTABLE AND PYTHON_LIBRARY AND PYTHON_INCLUDE_DIR AND NOT WIN32)
     message(STATUS "PYTHON_INCLUDE_DIR:FILEPATH=${PYTHON_INCLUDE_DIR}")
     message(STATUS "PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
     set(PYTHON_OK ON)
-    message(STATUS "OK, found python interpreter, libs and header files -> building python plugin")
+    message(STATUS "OK, found python interpreter, libs and header files")
 else()
-    message(WARNING "Cannot find python interpreter, libs and header files -> not building python plugin")
+    message(WARNING "Cannot find python interpreter, libs and header files, cannot build python interface")
 endif()
 
 if (ENABLE_PYTHON_INTERFACE AND PYTHON_OK)
+    message(STATUS "Building python interface")
     add_subdirectory(python pycryptosat)
 endif()
 
@@ -427,9 +434,9 @@ endif()
 # -----------------------------------------------------------------------------
 # Provide an export name to be used by targets that wish to export themselves.
 # -----------------------------------------------------------------------------
-set(CRYPTOMINISAT4_EXPORT_NAME "cryptominisat4Targets")
+set(CRYPTOMINISAT5_EXPORT_NAME "cryptominisat5Targets")
 
-add_subdirectory(src cmsat4-src)
+add_subdirectory(src cmsat5-src)
 
 # -----------------------------------------------------------------------------
 # Add uninstall target for makefiles
@@ -468,6 +475,7 @@ if (ENABLE_TESTING)
     message(STATUS "Testing is enabled")
     set(UNIT_TEST_EXE_SUFFIX "Tests" CACHE STRING "Suffix for Unit test executable")
     add_subdirectory(tests)
+    add_subdirectory(scripts/fuzz)
 
 else()
     message(WARNING "Testing is disabled")
@@ -475,47 +483,47 @@ endif()
 
 # -----------------------------------------------------------------------------
 # Export our targets so that other CMake based projects can interface with
-# the build of cryptominisat4 in the build-tree
+# the build of cryptominisat5 in the build-tree
 # -----------------------------------------------------------------------------
-set(CRYPTOMINISAT4_TARGETS_FILENAME "cryptominisat4Targets.cmake")
-set(CRYPTOMINISAT4_CONFIG_FILENAME "cryptominisat4Config.cmake")
-set(CRYPTOMINISAT4_STATIC_DEPS
+set(CRYPTOMINISAT5_TARGETS_FILENAME "cryptominisat5Targets.cmake")
+set(CRYPTOMINISAT5_CONFIG_FILENAME "cryptominisat5Config.cmake")
+set(CRYPTOMINISAT5_STATIC_DEPS
     ${SQLITE3_LIBRARIES}
     ${MYSQL_LIB}
     ${M4RI_LIBRARIES}
 )
 
 # Export targets
-set(MY_TARGETS libcryptominisat4 cryptominisat4_simple)
+set(MY_TARGETS libcryptominisat5 cryptominisat5_simple)
 if (NOT ONLY_SIMPLE)
-    set(MY_TARGETS ${MY_TARGETS} cryptominisat4)
+    set(MY_TARGETS ${MY_TARGETS} cryptominisat5)
 endif()
-export(TARGETS ${MY_TARGETS} FILE "${CMAKE_CURRENT_BINARY_DIR}/${CRYPTOMINISAT4_TARGETS_FILENAME}")
+export(TARGETS ${MY_TARGETS} FILE "${CMAKE_CURRENT_BINARY_DIR}/${CRYPTOMINISAT5_TARGETS_FILENAME}")
 
-# Create cryptominisat4Config file
+# Create cryptominisat5Config file
 set(EXPORT_TYPE "Build-tree")
 set(CONF_INCLUDE_DIRS "${CMAKE_CURRENT_BINARY_DIR}/include")
-configure_file(cryptominisat4Config.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/${CRYPTOMINISAT4_CONFIG_FILENAME}" @ONLY
+configure_file(cryptominisat5Config.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/${CRYPTOMINISAT5_CONFIG_FILENAME}" @ONLY
 )
 
-set(CRYPTOMINISAT4_INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH
-    "Installation directory for cryptominisat4 CMake files")
+set(CRYPTOMINISAT5_INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH
+    "Installation directory for cryptominisat5 CMake files")
 
-# Create cryptominisat4Config file
+# Create cryptominisat5Config file
 set(EXPORT_TYPE "installed")
 set(CONF_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include")
-configure_file(cryptominisat4Config.cmake.in
-   "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${CRYPTOMINISAT4_CONFIG_FILENAME}" @ONLY
+configure_file(cryptominisat5Config.cmake.in
+   "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${CRYPTOMINISAT5_CONFIG_FILENAME}" @ONLY
 )
 
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${CRYPTOMINISAT4_CONFIG_FILENAME}"
-    DESTINATION "${CRYPTOMINISAT4_INSTALL_CMAKE_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/${CRYPTOMINISAT5_CONFIG_FILENAME}"
+    DESTINATION "${CRYPTOMINISAT5_INSTALL_CMAKE_DIR}"
 )
 
 # Install the export set for use with the install-tree
-install(EXPORT ${CRYPTOMINISAT4_EXPORT_NAME} DESTINATION
-    "${CRYPTOMINISAT4_INSTALL_CMAKE_DIR}"
+install(EXPORT ${CRYPTOMINISAT5_EXPORT_NAME} DESTINATION
+    "${CRYPTOMINISAT5_INSTALL_CMAKE_DIR}"
 )
 

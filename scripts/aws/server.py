@@ -25,7 +25,7 @@ import RequestSpotClient
 
 def get_revision():
     _, solvername = os.path.split(options.base_dir + options.solver)
-    if solvername != "cryptominisat4":
+    if solvername != "cryptominisat5":
         return solvername
 
     pwd = os.getcwd()
@@ -186,6 +186,7 @@ class Server (threading.Thread):
         tosend["solver"] = options.solver
         tosend["git_rev"] = options.git_rev
         tosend["stats"] = options.stats
+        tosend["gauss"] = options.gauss
         tosend["s3_bucket"] = options.s3_bucket
         tosend["s3_folder"] = options.s3_folder
         tosend["timeout_in_secs"] = options.timeout_in_secs

@@ -88,6 +88,7 @@ void* ClauseAllocator::allocEnough(
     if (size + needed > capacity) {
         //Grow by default, but don't go under or over the limits
         size_t newcapacity = capacity * ALLOC_GROW_MULT;
+        newcapacity = std::max<size_t>(newcapacity, size+needed);
         newcapacity = std::min<size_t>(newcapacity, MAXSIZE);
         newcapacity = std::max<size_t>(newcapacity, MIN_LIST_SIZE);
 
@@ -158,12 +159,29 @@ void ClauseAllocator::clauseFree(Clause* cl)
 {
     assert(!cl->freed());
 
-    cl->setFreed();
-    size_t est_sz = cl->size();
-    est_sz = std::max(est_sz, (size_t)3); //we sometimes allow gauss to allocate 3-long clauses
-    size_t bytes_freed = (sizeof(Clause) + est_sz*sizeof(Lit));
-    size_t elems_freed = bytes_freed/sizeof(BASE_DATA_TYPE) + (bool)(bytes_freed % sizeof(BASE_DATA_TYPE));
-    currentlyUsedSize -= elems_freed;
+    bool quick_freed = false;
+    #ifdef USE_GAUSS
+    if (cl->gauss_temp_cl()) {
+        uint32_t neededbytes = (sizeof(Clause) + sizeof(Lit)*cl->size());
+        uint32_t needed
+            = neededbytes/sizeof(BASE_DATA_TYPE) + (bool)(neededbytes % sizeof(BASE_DATA_TYPE));
+
+        if ((uint32_t*)cl == (dataStart + size - needed)) {
+            size -= needed;
+            currentlyUsedSize -= needed;
+            quick_freed = true;
+        }
+    }
+    #endif
+
+    if (!quick_freed) {
+        cl->setFreed();
+        size_t est_sz = cl->size();
+        est_sz = std::max(est_sz, (size_t)3); //we sometimes allow gauss to allocate 3-long clauses
+        size_t bytes_freed = (sizeof(Clause) + est_sz*sizeof(Lit));
+        size_t elems_freed = bytes_freed/sizeof(BASE_DATA_TYPE) + (bool)(bytes_freed % sizeof(BASE_DATA_TYPE));
+        currentlyUsedSize -= elems_freed;
+    }
 
     #ifdef VALGRIND_MAKE_MEM_UNDEFINED
     VALGRIND_MAKE_MEM_UNDEFINED(((char*)cl)+sizeof(Clause), cl->size()*sizeof(Lit));

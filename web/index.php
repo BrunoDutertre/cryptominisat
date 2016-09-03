@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
     <meta charset="utf-8">
-    <title>Cryptominisat 3 visualization</title>
+    <title>Cryptominisat 5 visualization</title>
 
     <link rel="stylesheet" type="text/css" href="jquery.jqplot.css" />
     <script type="text/javascript" src="jquery-1.11.3.min.js"></script>
@@ -35,7 +35,7 @@
 </head>
 
 <body>
-<h1>Cryptominisat 3</h1>
+<h1>Cryptominisat 5</h1>
 
 <h3>Replacing wordy authority with visible certainty</h4>
 <p>This webpage shows the partial solving of two SAT instances, visually.
@@ -70,9 +70,9 @@ find a full list of terms below.
 &nbsp;
 <div style="display:inline;" id="total_files_info"></div>
 <br/>
-<select id='version' onchange='changed_version(this.value);' style="width:20%;">
+<!--<select id='version' onchange='changed_version(this.value);' style="width:20%;">
 <option value = "idtest">idtest</option>
-</select>
+</select>-->
 <select id="fname" style="width:60%;">
 <option value="test">Test</option>
 </select>
@@ -80,37 +80,17 @@ find a full list of terms below.
 </div>
 
 <script type="text/javascript">
-function changed_version(val) {
-    console.log(val);
-    new fill_files_options(val);
-};
+fill_files_options();
 
 $('#fname').change(function(){
     selected_runID(jQuery("#fname option:selected").val());
     //selected_runID(jQuery("#fname option:selected").text());
 });
 
-function fill_versions()
-{
-    jQuery.getJSON("get_versions.php",
-        function(data){
-            var select = document.getElementById('version');
-            select.options.length = 0; // clear out existing items
-            for(var i=0; i < data.length; i++) {
-                var d = data[i];
-                select.options.add(new Option(d.text, d.value));
-            }
-
-            changed_version(jQuery("#version option:selected").val());
-        }
-    );
-};
-
 function fill_files_options()
 {
-    link = "get_files_for_version.php?";
-    link += "version=" + jQuery("#version option:selected").text();
-    link += "&unfinish=" + $('#need_unfinished')[0].checked;
+    link = "get_files.php?";
+    link += "unfinish=" + $('#need_unfinished')[0].checked;
     link += "&sat=" + $('#need_SAT')[0].checked;
     link += "&unsat=" + $('#need_UNSAT')[0].checked;
     jQuery.getJSON(link,
@@ -130,8 +110,7 @@ function fill_files_options()
     );
 };
 
-
-fill_versions();
+// fill_versions();
 </script>
 
 <p id="fileinfo"></p>

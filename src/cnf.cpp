@@ -21,6 +21,8 @@
 
 #include "cnf.h"
 
+#include <stdexcept>
+
 #include "vardata.h"
 #include "solvertypes.h"
 #include "clauseallocator.h"
@@ -34,7 +36,7 @@ void CNF::new_var(const bool bva, const uint32_t orig_outer)
 {
     if (nVars() >= 1ULL<<28) {
         cout << "ERROR! Variable requested is far too large" << endl;
-        std::exit(-1);
+        throw std::runtime_error("ERROR! Variable requested is far too large");
     }
 
     minNumVars++;

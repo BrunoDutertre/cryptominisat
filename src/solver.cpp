@@ -145,7 +145,9 @@ void Solver::set_mysql(
 ) {
     #ifdef USE_MYSQL
     sqlStats = new MySQLStats(sqlServer, sqlUser, sqlPass, sqlDatabase);
-    sqlStats->setup(this);
+    if (!sqlStats->setup(this)) {
+        exit(-1);
+    }
     if (conf.verbosity >= 4) {
         cout << "c Connected to MySQL server" << endl;
     }
@@ -163,7 +165,9 @@ void Solver::set_sqlite(string
 ) {
     #ifdef USE_SQLITE3
     sqlStats = new SQLiteStats(filename);
-    sqlStats->setup(this);
+    if (!sqlStats->setup(this)) {
+        exit(-1);
+    }
     if (conf.verbosity >= 4) {
         cout << "c Connected to SQLite server" << endl;
     }
@@ -225,9 +229,9 @@ bool Solver::add_xor_clause_inter(
     }
     ps.resize(ps.size() - (i - j));
 
-    if (ps.size() > (0x01UL << 18)) {
+    if (ps.size() >= (0x01UL << 28)) {
         cout << "Too long clause!" << endl;
-        std::exit(-1);
+        throw std::runtime_error("ERROR! Too long clause");
     }
     //cout << "Cleaned ps is: " << ps << endl;
 
@@ -643,9 +647,9 @@ bool Solver::addClauseHelper(vector<Lit>& ps)
     assert(qhead == trail.size());
 
     //Check for too long clauses
-    if (ps.size() > (0x01UL << 18)) {
+    if (ps.size() > (0x01UL << 28)) {
         cout << "Too long clause!" << endl;
-        std::exit(-1);
+        throw std::runtime_error("ERROR! Too long clause");
     }
 
     //Check for too large variable number
@@ -1351,7 +1355,7 @@ lbool Solver::solve()
 
     if (conf.preprocess == 2) {
         status = load_state(conf.saved_state_file);
-        if (status == l_Undef) {
+        if (status != l_False) {
             model = assigns;
             status = load_solution_from_file(conf.solution_file);
             full_model = model;
@@ -1389,17 +1393,20 @@ lbool Solver::solve()
     }
 
     if (conf.preprocess == 1) {
-        if (status == l_Undef) {
+        cancelUntil(0);
+        if (status != l_False) {
             //So no set variables end up in the clauses
             clauseCleaner->remove_and_clean_all();
         }
 
+        if (status == l_True) {
+            cout << "WARN: Solution found during preprocessing,"
+            "but putting simplified CNF to file" << endl;
+        }
         save_state(conf.saved_state_file, status);
         ClauseDumper dumper(this);
         if (status == l_False) {
             dumper.open_file_and_write_unsat(conf.simplified_cnf);
-        } else if (status == l_True) {
-            dumper.open_file_and_write_sat(conf.simplified_cnf);
         } else {
             dumper.open_file_and_dump_irred_clauses_preprocessor(conf.simplified_cnf);
         }
@@ -1781,7 +1788,7 @@ bool Solver::execute_inprocess_strategy(
                     if (conf.verbosity) {
                         cout
                         << "c Turning off cache, memory used, "
-                        << memUsedMB/(1024UL*1024UL) << " MB"
+                        << memUsedMB << " MB"
                         << " is over limit of " << conf.maxCacheSizeMB  << " MB"
                         << endl;
                     }
@@ -1923,7 +1930,7 @@ lbool Solver::simplify_problem(const bool startup)
     check_wrong_attach();
     conf.global_timeout_multiplier *= conf.global_timeout_multiplier_multiplier;
     conf.global_timeout_multiplier =
-        std::max(
+        std::min(
             conf.global_timeout_multiplier, conf.orig_global_timeout_multiplier*conf.global_multiplier_multiplier_max
         );
 
@@ -1997,7 +2004,7 @@ void Solver::print_stats(const double cpu_time) const
     );
 
     if (conf.verbStats >= 2) {
-        print_all_stats(cpu_time);
+        print_full_restart_stat(cpu_time);
     } else if (conf.verbStats == 1) {
         print_norm_stats(cpu_time);
     } else {
@@ -2167,7 +2174,7 @@ void Solver::print_norm_stats(const double cpu_time) const
     print_stats_line("c Total time", cpu_time);
 }
 
-void Solver::print_all_stats(const double cpu_time) const
+void Solver::print_full_restart_stat(const double cpu_time) const
 {
     sumSearchStats.print(sumPropStats.propagations);
     sumPropStats.print(sumSearchStats.cpu_time);
@@ -3388,7 +3395,10 @@ void Solver::parse_v_line(A* in, const size_t lineNum)
         ) {
             model[var] = parsed_lit < 0 ? l_False : l_True;
             if (conf.verbosity >= 10) {
-                cout << "Read V line: model for var " << (var+1) << " set to " << model[var] << endl;
+                uint32_t outer_var = map_inter_to_outer(var);
+                cout << "Read V line: model for inter var " << (var+1)
+                << " (outer ver for this is: " << outer_var+1 << ")"
+                << " set to " << model[var] << endl;
             }
         }
     }

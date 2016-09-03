@@ -1,3 +1,13 @@
+[![release](https://img.shields.io/badge/Release-v5.0.0-blue.svg)](https://github.com/msoos/cryptominisat/releases/tag/cryptominisat-5.0.0)
+![licence](https://img.shields.io/badge/License-LGPLv2-brightgreen.svg)
+[![linux build](https://travis-ci.org/msoos/cryptominisat.svg?branch=master)](https://travis-ci.org/msoos/cryptominisat)
+[![windows build](https://ci.appveyor.com/api/projects/status/github/gruntjs/grunt?branch=master&svg=true)](https://ci.appveyor.com/project/msoos/cryptominisat)
+<a href="https://scan.coverity.com/projects/507">
+  <img alt="Coverity Scan Build Status"
+       src="https://scan.coverity.com/projects/507/badge.svg"/>
+</a>
+[![code coverage](https://coveralls.io/repos/msoos/cryptominisat/badge.svg?branch=master)](https://coveralls.io/r/msoos/cryptominisat?branch=master)
+
 CryptoMiniSat SAT solver
 ===========================================
 
@@ -8,18 +18,7 @@ input in the [DIMACS](http://www.satcompetition.org/2009/format-benchmarks2009.h
 format with the extension of XOR clauses. The C++ interface mimics this except
 that it allows for a more efficient system, with assumptions and multiple
 `solve()` calls. The python system is an interface to the C++ system that
-provides the best of both words: ease of use and a powerful interface.
-
-TravisCi: [![Build Status](https://travis-ci.org/msoos/cryptominisat.svg?branch=master)](https://travis-ci.org/msoos/cryptominisat)
-
-AppVeyor: [![Build Status Appveyor](https://ci.appveyor.com/api/projects/status/github/gruntjs/grunt?branch=master&svg=true)](https://ci.appveyor.com/project/msoos/cryptominisat)
-
-<a href="https://scan.coverity.com/projects/507">
-  <img alt="Coverity Scan Build Status"
-       src="https://scan.coverity.com/projects/507/badge.svg"/>
-</a>
-
-[![Coverage Status](https://coveralls.io/repos/msoos/cryptominisat/badge.svg?branch=master)](https://coveralls.io/r/msoos/cryptominisat?branch=master)
+provides the best of both worlds: ease of use and a powerful interface.
 
 Prerequisites
 -----
@@ -35,33 +34,38 @@ The following are not required but are useful::
 $ sudo apt-get install valgrind libm4ri-dev libmysqlclient-dev libsqlite3-dev
 ```
 
-Compiling and installing
+Compiling and installing under Linux
 -----
 
 You have to use cmake to compile and install. I suggest::
 ```
-$ tar xzvf my-cryptominisat-tarball.tar.gz
+$ tar xzvf cryptominisat-version.tar.gz
 $ cd cryptominisat-version
 $ mkdir build
 $ cd build
 $ cmake ..
 $ make -j4
 $ sudo make install
-```
-
-Once cryptominisat is installed, the binary is available under
-`/usr/local/bin/cryptominisat4`, the library shared library is available
-under `/usr/local/lib/libcryptominisat4.so` and the 3 header files are
-available under `/usr/local/include/cryptominisat4/`. To use the python
-bindings, you must have python installed while compiling and after the
-compilation has finished, issue:
-
-```
 $ sudo ldconfig
 ```
 
-You can uninstall both by simply doing `sudo make uninstall` in their respective
-directories.
+Once cryptominisat is installed, the binary is available under
+`/usr/local/bin/cryptominisat5`, the library shared library is available
+under `/usr/local/lib/libcryptominisat5.so` and the 3 header files are
+available under `/usr/local/include/cryptominisat5/`.You can uninstall
+both by executing `sudo make uninstall`.
+
+Compiling under Windows
+-----
+
+```
+$ unzip cryptominisat-version.zip
+$ cd cryptominisat-version
+$ cmake -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 14 2015 Win64" -DSTATICCOMPILE=ON
+$ msbuild INSTALL.vcxproj
+```
+
+The `cryptominisat5_simple` binary should now be built. In case you have boost libraries installed, it may also detect it, and you may get the full `cryptominisat5` binary built too. The two binaries only differ in the number of options supported.
 
 Command-line usage
 -----
@@ -79,7 +83,7 @@ The files has 3 clauses and 2 variables, this is reflected in the header
 must be False, and either 1 has to be False, 2 has to be True or 3 has to be
 True. The only solution to this problem is::
 ```
-$ cryptominisat4 --verb 0 file.cnf
+$ cryptominisat5 --verb 0 file.cnf
 s SATISFIABLE
 v 1 -2 3 0
 ```
@@ -139,7 +143,7 @@ be negated, the class `Lit` is used as: `Lit(variable_number, is_negated)`. As
 such, the 1st CNF above would become::
 
 ```
-#include <cryptominisat4/cryptominisat.h>
+#include <cryptominisat5/cryptominisat.h>
 #include <assert.h>
 #include <vector>
 using std::vector;
@@ -150,11 +154,11 @@ int main()
     SATSolver solver;
     vector<Lit> clause;
 
-    //We need 3 variables
-    solver.new_vars(3);
-
     //Let's use 4 threads
     solver.set_num_threads(4);
+
+    //We need 3 variables
+    solver.new_vars(3);
 
     //adds "1 0"
     clause.push_back(Lit(0, false));
@@ -242,6 +246,71 @@ only used to translate the original problem into CNF should not be added.
 This way, you will not get spurious solutions that don't differ in the main,
 important variables.
 
+Preprocessor usage
+-----
+
+Run cryptominisat5 as:
+
+```
+./cryptominisat5 -p1 input.cnf simplified.cnf
+some_sat_solver simplified.cnf > output
+./cryptominisat5 -p2 output
+```
+
+where `some_sat_solver` is a SAT solver of your choice that outputs a solution in the format of:
+
+```
+s SATISFIABLE
+v [solution] 0
+```
+
+or 
+
+```
+s UNSATISFIABLE
+```
+
+You can tune the schedule of simplifications by issuing `--sched "X,Y,Z..."`. The default schedule for preprocessing is:
+
+```
+handle-comps,scc-vrepl, cache-clean, cache-tryboth,sub-impl, intree-probe, probe,
+sub-str-cls-with-bin, distill-cls, scc-vrepl, sub-impl,occ-backw-sub-str,
+occ-xor, occ-clean-implicit, occ-bve, occ-bva, occ-gates,str-impl, cache-clean,
+sub-str-cls-with-bin, distill-cls, scc-vrepl, sub-impl,str-impl, sub-impl,
+sub-str-cls-with-bin, occ-backw-sub-str, occ-bve,check-cache-size, renumber
+```
+
+It is a good idea to put `renumber` as late as possible, as it renumbers the variables for memory usage reduction.
+
+Gaussian elimination
+-----
+For building with Gaussian Elimination, you need to perform:
+
+```
+git clone https://github.com/msoos/cryptominisat.git
+cd cryptominisat
+mkdir build && cd build
+cmake -DUSE_GAUSS=ON ..
+make
+```
+
+To use Gaussian elimination, provide a CNF with xors in it (either in CNF or XOR+CNF form) and tune the gaussian parameters. Use `--hhelp` to find all the gaussian elimination options:
+
+```
+Gauss options:
+  --iterreduce arg (=1)       Reduce iteratively the matrix that is updated.We
+                              effectively are moving the start to the last
+                              column updated
+  --maxmatrixrows arg (=3000) Set maximum no. of rows for gaussian matrix. Too
+                              large matrixesshould bee discarded for reasons of
+                              efficiency
+  --autodisablegauss arg (=1) Automatically disable gauss when performing badly
+  --minmatrixrows arg (=5)    Set minimum no. of rows for gaussian matrix.
+                              Normally, too smallmatrixes are discarded for
+                              reasons of efficiency
+  --savematrix arg (=2)       Save matrix every Nth decision level
+  --maxnummatrixes arg (=3)   Maximum number of matrixes to treat.
+```
 
 Testing
 -----
@@ -250,15 +319,20 @@ For testing you will need the GIT checkout and get the submodules:
 ```
 git clone https://github.com/msoos/cryptominisat.git
 cd cryptominisat
-git submodules init
-git submodules update
+git submodule init
+git submodule update
 ```
 
 Then you need to build with `-DENABLE_TESTING=ON`, build and run the tests:
 
 ```
 mkdir build
+cd build
 cmake -DENABLE_TESTING=ON ..
 make -j4
 make test
 ```
+
+Web-based run explorer
+-----
+Please see under web/README.markdown for details. This is an experimental feature.

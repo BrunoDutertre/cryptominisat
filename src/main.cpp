@@ -49,7 +49,7 @@ THE SOFTWARE.
 #include "main_common.h"
 #include "time_mem.h"
 #include "dimacsparser.h"
-#include "cryptominisat4/cryptominisat.h"
+#include "cryptominisat5/cryptominisat.h"
 #include "signalcode.h"
 
 #ifdef USE_ZLIB
@@ -141,7 +141,8 @@ void Main::readInAFile(SATSolver* solver2, const string& filename)
         exit(-1);
     }
 
-    call_after_parse(parser.independent_vars);
+    independent_vars.swap(parser.independent_vars);
+    call_after_parse();
 
     #ifndef USE_ZLIB
         fclose(in);
@@ -585,7 +586,7 @@ void Main::add_supported_options()
     printOptions.add_options()
     ("verbstat", po::value(&conf.verbStats)->default_value(conf.verbStats)
         , "Change verbosity of statistics at the end of the solving [0..2]")
-    ("printfull", po::value(&conf.print_all_stats)->default_value(conf.print_all_stats)
+    ("verbrestart", po::value(&conf.print_full_restart_stat)->default_value(conf.print_full_restart_stat)
         , "Print more thorough, but different stats")
     ("printsol,s", po::value(&printResult)->default_value(printResult)
         , "Print assignment if solution is SAT")
@@ -1285,10 +1286,18 @@ lbool Main::multi_solutions()
 
             //Banning found solution
             vector<Lit> lits;
-            for (uint32_t var = 0; var < solver->nVars(); var++) {
-                if (solver->get_model()[var] != l_Undef) {
-                    lits.push_back( Lit(var, (solver->get_model()[var] == l_True)? true : false) );
-                }
+            if (independent_vars.empty()) {
+              for (uint32_t var = 0; var < solver->nVars(); var++) {
+                  if (solver->get_model()[var] != l_Undef) {
+                      lits.push_back( Lit(var, (solver->get_model()[var] == l_True)? true : false) );
+                  }
+              }
+            } else {
+              for (const uint32_t var: independent_vars) {
+                  if (solver->get_model()[var] != l_Undef) {
+                      lits.push_back( Lit(var, (solver->get_model()[var] == l_True)? true : false) );
+                  }
+              }
             }
             solver->add_clause(lits);
         }

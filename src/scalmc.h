@@ -46,7 +46,6 @@ public:
         , approxMCOptions("ApproxMC options")
     {
         must_interrupt.store(false, std::memory_order_relaxed);
-        randomEngine.seed(0);
     }
     int solve() override;
     void add_supported_options() override;
@@ -58,7 +57,7 @@ private:
     bool ScalApproxMC(SATCount& count);
     bool ApproxMC(SATCount& count);
     bool AddHash(uint32_t num_xor_cls, vector<Lit>& assumps);
-    bool SetHash(uint32_t clausNum, std::map<uint64_t,Lit>& hashVars, vector<Lit>& assumps);
+    void SetHash(uint32_t clausNum, std::map<uint64_t,Lit>& hashVars, vector<Lit>& assumps);
 
     int64_t BoundedSATCount(uint32_t maxSolutions, const vector<Lit>& assumps);
     lbool BoundedSAT(
@@ -76,12 +75,10 @@ private:
     std::map< std::string, std::vector<uint32_t>> globalSolutionMap;
     bool openLogFile();
     std::atomic<bool> must_interrupt;
-    vector<uint32_t> independent_vars;
-    void call_after_parse(const vector<uint32_t>& independent_vars) override;
+    void call_after_parse() override;
 
     uint32_t startIteration = 0;
     uint32_t pivotApproxMC = 52;
-    uint32_t pivotUniGen = 27;
     uint32_t tApproxMC = 17;
     uint32_t searchMode = 1;
     double   loopTimeout = 2500;

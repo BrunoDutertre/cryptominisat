@@ -1,5 +1,5 @@
 /******************************************
-Copyright (c) 2014, Mate Soos
+Copyright (c) 2016, @Storyyeller
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20,45 +20,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ***********************************************/
 
-#include <cryptominisat5/cryptominisat.h>
-#include "src/time_mem.h"
-#include <assert.h>
-#include <vector>
-#include <iostream>
 
-using std::cout;
-using std::endl;
-using std::vector;
-using namespace CMSat;
+#include "cryptominisat5/cryptominisat_c.h"
+#include "assert.h"
 
-int main()
-{
-    SATSolver s;
-    s.set_no_simplify();
+c_Lit new_lit(uint32_t var, bool neg) {
+    c_Lit x = {(var << 1) | neg};
+    return x;
+}
 
-    const size_t num = 100*1000ULL;
+int main(void) {
+    int new; // make sure this is actually compiled as C
 
-    s.new_vars(num);
-    vector<Lit> lits(3);
-    for(size_t i = 2; i < num; i++) {
-        if (i % 100 != 0)
-            continue;
+    SATSolver *solver = cmsat_new();
+    cmsat_set_num_threads(solver, 4);
+    cmsat_new_vars(solver, 3);
 
-        lits[0] = Lit(i-2, false);
-        lits[1] = Lit(i-1, false);
-        lits[2] = Lit(i, true);
-        s.add_clause(lits);
-    }
-    cout << "Adding of clauses finished" << endl;
+    c_Lit clause[4] = {};
+    clause[0] = new_lit(0, false);
+    cmsat_add_clause(solver, clause, 1);
 
-    s.solve();
-    double start = cpuTime();
-    vector<Lit> assumptions(1);
-    for(size_t i = 0; i < 600; i++) {
-        assumptions[0] = Lit(i, false);
-        s.solve(&assumptions);
-    }
-    double end = cpuTime();
-    cout << "T: " << (end-start) << endl;
-    assert(end-start < 15);
+    clause[0] = new_lit(1, true);
+    cmsat_add_clause(solver, clause, 1);
+
+    clause[0] = new_lit(0, true);
+    clause[1] = new_lit(1, false);
+    clause[2] = new_lit(2, false);
+    cmsat_add_clause(solver, clause, 3);
+
+    c_lbool ret = cmsat_solve(solver);
+    assert(ret.x == L_TRUE);
+
+    slice_lbool model = cmsat_get_model(solver);
+    assert(model.vals[0].x == L_TRUE);
+    assert(model.vals[1].x == L_FALSE);
+    assert(model.vals[2].x == L_TRUE);
+
+    cmsat_free(solver);
+    return 0;
 }

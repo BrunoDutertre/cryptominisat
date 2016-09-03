@@ -24,10 +24,10 @@ THE SOFTWARE.
 // 1) compile cryptominsat
 // 2) install cryptominisat: sudo make install
 // 3) run ldconfig: sudo ldconfig
-// 4) build: g++ -std=c++11 readme_test.cpp -lcryptominisat4 -o readme_test
+// 4) build: g++ -std=c++11 readme_test.cpp -lcryptominisat5 -o readme_test
 // 5) run: ./readme_test
 
-#include <cryptominisat4/cryptominisat.h>
+#include <cryptominisat5/cryptominisat.h>
 #include <assert.h>
 #include <vector>
 using std::vector;
@@ -38,10 +38,11 @@ int main()
     SATSolver solver;
     vector<Lit> clause;
 
+    //Let's use 4 threads
+    solver.set_num_threads(4);
+
     //We need 3 variables
-    solver.new_var();
-    solver.new_var();
-    solver.new_var();
+    solver.new_vars(3);
 
     //adds "1 0"
     clause.push_back(Lit(0, false));

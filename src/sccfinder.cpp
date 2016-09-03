@@ -55,14 +55,17 @@ bool SCCFinder::performSCC(uint64_t* bogoprops_given)
     stackIndicator.resize(solver->nVars()*2, false);
     assert(stack.empty());
 
+    depth = 0;
     for (uint32_t vertex = 0; vertex < solver->nVars()*2; vertex++) {
         //Start a DFS at each node we haven't visited yet
         const uint32_t v = vertex>>1;
         if (solver->value(v) != l_Undef) {
             continue;
         }
+        assert(depth == 0);
         if (index[vertex] == std::numeric_limits<uint32_t>::max()) {
             tarjan(vertex);
+            depth--;
             assert(stack.empty());
         }
     }
@@ -88,6 +91,19 @@ bool SCCFinder::performSCC(uint64_t* bogoprops_given)
 
 void SCCFinder::tarjan(const uint32_t vertex)
 {
+    depth++;
+    if (depth >= solver->conf.max_scc_depth) {
+        if (solver->conf.verbosity) {
+            cout << "c [scc] WARNING: reached maximum depth of " << solver->conf.max_scc_depth << endl;
+        }
+        return;
+    }
+
+    const Lit vertLit = Lit::toLit(vertex);
+    if (solver->varData[vertLit.var()].removed != Removed::none) {
+        return;
+    }
+
     runStats.bogoprops += 1;
     index[vertex] = globalIndex;  // Set the depth index for v
     lowlink[vertex] = globalIndex;
@@ -95,55 +111,41 @@ void SCCFinder::tarjan(const uint32_t vertex)
     stack.push(vertex); // Push v on the stack
     stackIndicator[vertex] = true;
 
-    uint32_t vertexVar = Lit::toLit(vertex).var();
-    if (solver->varData[vertexVar].removed == Removed::none) {
-        Lit vertLit = Lit::toLit(vertex);
+    vector<LitExtra>* transCache = NULL;
+    if (solver->conf.doCache
+        && solver->conf.doExtendedSCC
+        && (!solver->drat->enabled() || solver->conf.otfHyperbin)
+    ) {
+        transCache = &(solver->implCache[~vertLit].lits);
+        __builtin_prefetch(transCache->data());
+    }
 
-        vector<LitExtra>* transCache = NULL;
+    //Go through the watch
+    watch_subarray_const ws = solver->watches[~vertLit];
+    runStats.bogoprops += ws.size()/4;
+    for (const Watched& w: ws) {
+        //Only binary clauses matter
+        if (!w.isBin())
+            continue;
 
-        if (solver->conf.doCache
-            && solver->conf.doExtendedSCC
-            && (!solver->drat->enabled() || solver->conf.otfHyperbin)
-        ) {
-            transCache = &(solver->implCache[~vertLit].lits);
-            __builtin_prefetch(transCache->data());
+        const Lit lit = w.lit2();
+        if (solver->value(lit) != l_Undef) {
+            continue;
         }
+        doit(lit, vertex);
+    }
 
-        //Go through the watch
-        watch_subarray_const ws = solver->watches[~vertLit];
-        runStats.bogoprops += ws.size()/4;
-        for (const Watched *it = ws.begin(), *end = ws.end()
-            ; it != end
-            ; ++it
-        ) {
-            //Only binary clauses matter
-            if (!it->isBin())
-                continue;
-
-            const Lit lit = it->lit2();
+    if (transCache) {
+        runStats.bogoprops += transCache->size()/4;
+        for (const LitExtra& le: *transCache) {
+            Lit lit = le.getLit();
             if (solver->value(lit) != l_Undef) {
                 continue;
             }
-            doit(lit, vertex);
-        }
-
-        if (transCache) {
-            runStats.bogoprops += transCache->size()/4;
-            for (vector<LitExtra>::iterator
-                it = transCache->begin(), end = transCache->end()
-                ; it != end
-                ; ++it
-            ) {
-                Lit lit = it->getLit();
-                if (solver->value(lit) != l_Undef) {
-                    continue;
-                }
-                if (lit != ~vertLit) {
-                    doit(lit, vertex);
-                }
+            if (lit != ~vertLit) {
+                doit(lit, vertex);
             }
         }
-
     }
 
     // Is v the root of an SCC?
@@ -159,32 +161,33 @@ void SCCFinder::tarjan(const uint32_t vertex)
         } while (vprime != vertex);
         if (tmp.size() >= 2) {
             runStats.bogoprops += 3;
-            for (uint32_t i = 1; i < tmp.size(); i++) {
-                if (!solver->ok) {
-                    break;
-                }
+            add_bin_xor_in_tmp();
+        }
+    }
+}
 
-                bool rhs = Lit::toLit(tmp[0]).sign()
-                    ^ Lit::toLit(tmp[i]).sign();
+void SCCFinder::add_bin_xor_in_tmp()
+{
+    for (uint32_t i = 1; i < tmp.size(); i++) {
+        bool rhs = Lit::toLit(tmp[0]).sign()
+            ^ Lit::toLit(tmp[i]).sign();
 
-                BinaryXor binxor(Lit::toLit(tmp[0]).var(), Lit::toLit(tmp[i]).var(), rhs);
-                binxors.insert(binxor);
+        BinaryXor binxor(Lit::toLit(tmp[0]).var(), Lit::toLit(tmp[i]).var(), rhs);
+        binxors.insert(binxor);
 
-                //Both are UNDEF, so this is a proper binary XOR
-                if (solver->value(binxor.vars[0]) == l_Undef
-                    && solver->value(binxor.vars[1]) == l_Undef
-                ) {
-                    runStats.foundXors++;
-                    #ifdef VERBOSE_DEBUG
-                    cout << "SCC says: "
-                    << binxor.vars[0] +1
-                    << " XOR "
-                    << binxor.vars[1] +1
-                    << " = " << binxor.rhs
-                    << endl;
-                    #endif
-                }
-            }
+        //Both are UNDEF, so this is a proper binary XOR
+        if (solver->value(binxor.vars[0]) == l_Undef
+            && solver->value(binxor.vars[1]) == l_Undef
+        ) {
+            runStats.foundXors++;
+            #ifdef VERBOSE_DEBUG
+            cout << "SCC says: "
+            << binxor.vars[0] +1
+            << " XOR "
+            << binxor.vars[1] +1
+            << " = " << binxor.rhs
+            << endl;
+            #endif
         }
     }
 }

@@ -50,7 +50,7 @@
 #include "scalmc.h"
 #include "time_mem.h"
 #include "dimacsparser.h"
-#include "cryptominisat4/cryptominisat.h"
+#include "cryptominisat5/cryptominisat.h"
 #include "signalcode.h"
 
 using std::cout;
@@ -93,7 +93,6 @@ void CUSP::add_approxmc_options()
     approxMCOptions.add_options()
     ("pivotAC", po::value(&pivotApproxMC)->default_value(pivotApproxMC)
         , "Number of solutions to check for")
-    ("pivotUniGen", po::value(&pivotUniGen)->default_value(pivotUniGen), "")
     ("mode", po::value(&searchMode)->default_value(searchMode)
         ,"Seach mode. ApproxMX = 0, ScalMC = 1")
     ("tApproxMC", po::value(&tApproxMC)->default_value(tApproxMC)
@@ -337,8 +336,16 @@ int CUSP::solve()
 {
     conf.reconfigure_at = 0;
     conf.reconfigure_val = 15;
-    conf.gaussconf.max_num_matrixes = 10;
+    conf.gaussconf.max_matrix_rows = 3000;
+    conf.gaussconf.decision_until = 3000;
+    conf.gaussconf.max_num_matrixes = 1;
+    conf.gaussconf.min_matrix_rows = 5;
     conf.gaussconf.autodisable = false;
+
+    //set seed
+    assert(vm.count("random"));
+    unsigned int seed = vm["random"].as<unsigned int>();
+    randomEngine.seed(seed);
 
     openLogFile();
     startTime = cpuTimeTotal();
@@ -374,6 +381,7 @@ int CUSP::solve()
     } else {
         finished = ScalApproxMC(solCount);
     }
+    cout << "ApproxMC finished in " << (cpuTimeTotal() - startTime) << " s" << endl;
     if (!finished) {
         cout << " (TIMED OUT)" << endl;
         return 0;
@@ -417,12 +425,11 @@ int main(int argc, char** argv)
     #endif
 }
 
-void CUSP::call_after_parse(const vector<uint32_t>& _independent_vars)
+void CUSP::call_after_parse()
 {
-    independent_vars = _independent_vars;
     if (independent_vars.empty()) {
         cout
-        << "c WARNING! No independet vars were set using 'c ind var1 [var2 var3 ..]'"
+        << "c WARNING! No independent vars were set using 'c ind var1 [var2 var3 ..] 0'"
         "notation in the CNF." << endl
         << " c ScalMC may work substantially worse!" << endl;
         for (size_t i = 0; i < solver->nVars(); i++) {
@@ -433,7 +440,7 @@ void CUSP::call_after_parse(const vector<uint32_t>& _independent_vars)
 }
 
 //For ScalApproxMC only
-bool CUSP::SetHash(uint32_t clausNum,  std::map<uint64_t,Lit>& hashVars, vector<Lit>& assumps)
+void CUSP::SetHash(uint32_t clausNum, std::map<uint64_t,Lit>& hashVars, vector<Lit>& assumps)
 {
     if (clausNum < assumps.size()) {
         uint64_t numberToRemove = assumps.size()- clausNum;
@@ -453,7 +460,6 @@ bool CUSP::SetHash(uint32_t clausNum,  std::map<uint64_t,Lit>& hashVars, vector<
             }
         }
     }
-    return true;
 }
 
 //For ScalApproxMC only
@@ -463,7 +469,11 @@ bool CUSP::ScalApproxMC(SATCount& count)
     vector<uint64_t> numHashList;
     vector<int64_t> numCountList;
     vector<Lit> assumps;
-    uint64_t hashCount = startIteration, hashPrev = 0, mPrev = 0;
+
+    uint64_t hashCount = startIteration;
+    uint64_t hashPrev = 0;
+    uint64_t mPrev = 0;
+
     double myTime = cpuTimeTotal();
     if (hashCount == 0) {
         int64_t currentNumSolutions = BoundedSATCount(pivotApproxMC+1,assumps);
@@ -471,6 +481,8 @@ bool CUSP::ScalApproxMC(SATCount& count)
                   << std::fixed << std::setprecision(2) << (cpuTimeTotal() - myTime) << ":"
                   << (int)(currentNumSolutions == (pivotApproxMC + 1)) << ":"
                   << currentNumSolutions << endl;
+
+        //Din't find at least pivotApproxMC+1
         if (currentNumSolutions <= pivotApproxMC) {
             count.cellSolCount = currentNumSolutions;
             count.hashCount = 0;
@@ -482,7 +494,7 @@ bool CUSP::ScalApproxMC(SATCount& count)
     for (uint32_t j = 0; j < tApproxMC; j++) {
         map<uint64_t,int64_t> countRecord;
         map<uint64_t,uint32_t> succRecord;
-        map<uint64_t,Lit> hashVars;
+        map<uint64_t,Lit> hashVars; //map assumption var to XOR hash
 
         uint32_t repeatTry = 0;
         uint64_t numExplored = 1;
@@ -494,6 +506,7 @@ bool CUSP::ScalApproxMC(SATCount& count)
             myTime = cpuTimeTotal();
             uint64_t swapVar = hashCount;
             SetHash(hashCount,hashVars,assumps);
+            cout << "Number of XOR hashes active: " << hashCount << endl;
             int64_t currentNumSolutions = BoundedSATCount(pivotApproxMC + 1, assumps);
 
             //cout << currentNumSolutions << ", " << pivotApproxMC << endl;
@@ -506,6 +519,7 @@ bool CUSP::ScalApproxMC(SATCount& count)
             if (currentNumSolutions < 0) {
                 //Remove all hashes
                 assumps.clear();
+                hashVars.clear();
 
                 if (repeatTry < 2) {    /* Retry up to twice more */
                     assert(hashCount > 0);
@@ -550,7 +564,9 @@ bool CUSP::ScalApproxMC(SATCount& count)
                     }
                     hashCount = (upperFib+lowerFib)/2;
                 }
-            } else if (currentNumSolutions == pivotApproxMC+1) {
+            } else {
+                assert(currentNumSolutions == pivotApproxMC+1);
+
                 numExplored = hashCount + independent_vars.size()-upperFib;
                 if (succRecord.find(hashCount+1) != succRecord.end()
                     && succRecord[hashCount+1] == 0
@@ -575,7 +591,6 @@ bool CUSP::ScalApproxMC(SATCount& count)
             hashPrev = swapVar;
         }
         assumps.clear();
-        hashVars.clear();
         solver->simplify(&assumps);
         hashCount =mPrev;
     }

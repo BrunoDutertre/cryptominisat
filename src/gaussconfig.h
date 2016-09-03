@@ -33,12 +33,12 @@ class GaussConf
 
     GaussConf() :
         only_nth_gauss_save(2)
-        , decision_until(10000)
+        , decision_until(700)
         , autodisable(true)
         , iterativeReduce(true)
-        , max_matrix_rows(1000)
-        , min_matrix_rows(20)
-        , max_num_matrixes(3)
+        , max_matrix_rows(800)
+        , min_matrix_rows(15)
+        , max_num_matrixes(2)
     {
     }
 
@@ -53,7 +53,7 @@ class GaussConf
     //Matrix extraction config
     bool doMatrixFind = true;
     uint32_t min_gauss_xor_clauses = 3;
-    uint32_t max_gauss_xor_clauses = 50000;
+    uint32_t max_gauss_xor_clauses = 500000;
 };
 
 }

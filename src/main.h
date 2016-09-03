@@ -28,7 +28,7 @@
 #include <fstream>
 
 #include "solverconf.h"
-#include "cryptominisat4/cryptominisat.h"
+#include "cryptominisat5/cryptominisat.h"
 
 using std::string;
 using std::vector;
@@ -74,13 +74,12 @@ class Main
 
         po::positional_options_description p;
         po::options_description all_options;
-        po::variables_map vm;
 
     protected:
         //Options
+        po::variables_map vm;
         virtual void add_supported_options();
-        virtual void call_after_parse(const vector<uint32_t>& /*independent_vars*/)
-        {}
+        virtual void call_after_parse() {};
 
         po::options_description help_options_simple;
         po::options_description help_options_complicated;
@@ -119,6 +118,7 @@ class Main
         string sqlUser;
         string sqlPass;
         string sqlDatabase;
+        vector<uint32_t> independent_vars;
 
         //Files to read & write
         bool fileNamePresent;

@@ -23,7 +23,7 @@
 
 #include <fstream>
 
-#include "cryptominisat4/cryptominisat.h"
+#include "cryptominisat5/cryptominisat.h"
 #include "src/solverconf.h"
 using namespace CMSat;
 #include <vector>
@@ -624,6 +624,79 @@ TEST(xor_interface, xor3)
     EXPECT_EQ( ret, l_True);
     pairs = s.get_all_binary_xors();
     EXPECT_EQ( pairs.size(), 2u);
+}
+
+TEST(error_throw, multithread_newvar)
+{
+    SATSolver s;
+
+    s.new_vars(3);
+    EXPECT_THROW({
+        s.set_num_threads(3);}
+        , std::runtime_error);
+}
+
+TEST(error_throw, multithread_0)
+{
+    SATSolver s;
+
+    EXPECT_THROW({
+        s.set_num_threads(0);}
+        , std::runtime_error);
+}
+
+TEST(error_throw, multithread_drat)
+{
+    SATSolver s;
+    std::ostream* os = NULL;
+    s.set_drat(os, false);
+
+    EXPECT_THROW({
+        s.set_num_threads(3);}
+        , std::runtime_error);
+}
+
+TEST(error_throw, toomany_vars)
+{
+    SATSolver s;
+
+    EXPECT_THROW({
+        s.new_vars(1ULL << 28);}
+        , std::runtime_error);
+}
+
+TEST(error_throw, toomany_vars2)
+{
+    SATSolver s;
+    s.new_vars(1ULL << 27);
+
+    EXPECT_THROW({
+        s.new_vars(1ULL << 27);}
+        , std::runtime_error);
+}
+
+TEST(error_throw, toomany_vars_single)
+{
+    SATSolver s;
+    s.new_vars((1ULL << 28) -1);
+
+    EXPECT_THROW({
+        s.new_var();}
+        , std::runtime_error);
+}
+
+TEST(no_error_throw, long_clause)
+{
+    SATSolver s;
+    s.new_vars(1ULL << 20);
+
+    vector<Lit> cl;
+    for(size_t i = 0; i < 1ULL << 20; i++) {
+        cl.push_back(Lit(i, false));
+    }
+    s.add_clause(cl);
+    lbool ret = s.solve();
+    EXPECT_EQ(ret, l_True);
 }
 
 

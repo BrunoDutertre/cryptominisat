@@ -95,6 +95,7 @@ class solution_parser:
                 if line[0] != 'x':
                     solution_parser._check_regular_clause(line, solution)
                 else:
+                    assert line[0] == 'x', "Line must start with p, c, v or x"
                     solution_parser._check_xor_clause(line, solution)
 
                 clauses += 1
@@ -385,23 +386,20 @@ class solution_parser:
 
     @staticmethod
     def _check_regular_clause(line, solution):
-            lits = line.split()
-            final = False
-            for lit in lits:
-                numlit = int(lit)
-                if numlit != 0:
-                    if (abs(numlit) not in solution):
-                        continue
-                    if numlit < 0:
-                        final |= ~solution[abs(numlit)]
-                    else:
-                        final |= solution[numlit]
-                    if final is True:
-                        break
-            if final is False:
-                print("Error: clause '%s' not satisfied." % line)
-                print("Error code 100")
-                exit(100)
+        lits = line.split()
+        final = False
+        for lit in lits:
+            numlit = int(lit)
+            if numlit == 0:
+                break
+
+            if abs(numlit) not in solution:
+                continue
+
+            if solution[abs(numlit)] ^ (numlit < 0):
+                return True
+
+        raise NameError("Error: clause '%s' not satisfied." % line)
 
     @staticmethod
     def _check_xor_clause(line, solution):
@@ -412,14 +410,14 @@ class solution_parser:
             numlit = int(lit)
             if numlit != 0:
                 if abs(numlit) not in solution:
-                    print("Error: var %d not solved, but referred to in a xor-clause of the CNF" % abs(numlit))
-                    print("Error code 200")
-                    exit(200)
+                    raise NameError("Error: var %d not solved, but referred to in a xor-clause of the CNF" % abs(numlit))
                 final ^= solution[abs(numlit)]
                 final ^= numlit < 0
         if final is False:
-            print("Error: xor-clause '%s' not satisfied." % line)
-            exit(-1)
+            raise NameError("Error: xor-clause '%s' not satisfied." % line)
+
+        return final
+
 
 def parse_arguments():
     class PlainHelpFormatter(optparse.IndentedHelpFormatter):
@@ -438,10 +436,10 @@ For example:
     parser.add_option("--verbose", "-v", action="store_true",
                       default=False, dest="verbose", help="Be more verbose")
     parser.add_option("--tout", "-t", dest="maxtime", type=int, default=100,
-                  help="Max time to run. Default: %default")
+                      help="Max time to run. Default: %default")
     parser.add_option("--textra", dest="maxtimediff", type=int, default=10,
-                  help="Extra time on top of timeout for processing."
-                  " Default: %default")
+                      help="Extra time on top of timeout for processing."
+                      " Default: %default")
     # parse options
     options, args = parser.parse_args()
     return options, args
@@ -451,14 +449,15 @@ if __name__ == "__main__":
     print("Options are:", options)
     print("args are:", args)
     if len(args) != 2:
-        print("ERROR: You must give exactly two parameters, one SOLUTION and one CNF")
-        print("You gave {n} parameters".format(**{"n":len(args)}))
+        print("ERROR: You must give exactly two parameters, "
+              "one SOLUTION and one CNF")
+        print("You gave {n} parameters".format(**{"n": len(args)}))
         exit(-1)
 
     sol_file = args[0]
     cnf_file = args[1]
     print("Verifying CNF file '{cnf}' against solution in file '{sol}'".format(
-        **{"cnf":cnf_file, "sol":sol_file}))
+        **{"cnf": cnf_file, "sol": sol_file}))
 
     print("Checking debug libs...")
     sol_parser = solution_parser(options)

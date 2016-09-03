@@ -26,7 +26,7 @@ THE SOFTWARE.
 
 #include <string.h>
 #include "streambuffer.h"
-#include "cryptominisat4/cryptominisat.h"
+#include "cryptominisat5/cryptominisat.h"
 #include <cstdlib>
 #include <cmath>
 
@@ -363,6 +363,7 @@ bool DimacsParser<C>::parse_and_add_clause(C& in)
     if (!readClause(in)) {
         return false;
     }
+    in.skipWhitespace();
     if (!in.skipEOL(lineNum)) {
         return false;
     }
