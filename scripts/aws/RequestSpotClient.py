@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
 import boto
 import sys
 import ConfigParser
@@ -24,9 +25,12 @@ class RequestSpotClient:
             self.conf.read('ec2-spot-instance.cfg')
             self.limit_create = 8
 
+        if self.count is None:
+            self.count = int(self.conf.get('ec2', 'count'))
+
         self.ec2conn = self.__create_ec2conn()
         if self.ec2conn is None:
-            print 'Unable to create EC2 ec2conn'
+            print('Unable to create EC2 ec2conn')
             sys.exit(0)
 
         self.user_data = self.__get_user_data(noshutdown)
@@ -54,7 +58,6 @@ sudo -H -u ubuntu bash -c 'git clone --no-single-branch --depth 50 https://githu
 
 # Get credentials
 cd /home/ubuntu/
-sudo -H -u ubuntu bash -c 'aws s3 cp s3://msoos-solve-data/solvers/.boto . --region=us-west-2'
 sudo -H -u ubuntu bash -c 'aws s3 cp s3://msoos-solve-data/solvers/email.conf . --region=us-west-2'
 
 # build solvers
@@ -78,20 +81,21 @@ DATA="%s"
         regions = ec2conn.get_all_regions()
         for r in regions:
             if r.name == self.conf.get('ec2', 'region'):
-                ec2conn = EC2Connection(region = r)
+                ec2conn = EC2Connection(region=r)
                 return ec2conn
         return None
 
     def __provision_instances(self):
-        reqs = self.ec2conn.request_spot_instances(price = self.conf.get('ec2', 'max_bid'),
-                count = self.count,
-                image_id = self.conf.get('ec2', 'ami_id'),
-                subnet_id = self.conf.get('ec2', 'subnet_id'),
-                instance_type = self.conf.get('ec2', 'type'),
-                instance_profile_arn = self.conf.get('ec2', 'instance_profile_arn'),
-                user_data = self.user_data,
-                key_name = self.conf.get('ec2', 'key_name'),
-                security_group_ids = [self.conf.get('ec2', 'security_group')])
+        reqs = self.ec2conn.request_spot_instances(
+            price=self.conf.get('ec2', 'max_bid'),
+            count=self.count,
+            image_id=self.conf.get('ec2', 'ami_id'),
+            subnet_id=self.conf.get('ec2', 'subnet_id'),
+            instance_type=self.conf.get('ec2', 'type'),
+            instance_profile_arn=self.conf.get('ec2', 'instance_profile_arn'),
+            user_data=self.user_data,
+            key_name=self.conf.get('ec2', 'key_name'),
+            security_group_ids=[self.conf.get('ec2', 'security_group')])
 
         logging.info("Request created, got back IDs %s" % [r.id for r in reqs])
         return reqs

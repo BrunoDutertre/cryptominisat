@@ -22,8 +22,6 @@ CREATE TABLE `reduceDB` (
   `removedGlue` bigint(20) NOT NULL,
   `removedResolBinIrred` bigint(20) NOT NULL,
   `removedResolBinRed` bigint(20) NOT NULL,
-  `removedResolTriIrred` bigint(20) NOT NULL,
-  `removedResolTriRed` bigint(20) NOT NULL,
   `removedResolLIrred` bigint(20) NOT NULL,
   `removedResolLRed` bigint(20) NOT NULL,
   `removedAge` bigint(20) NOT NULL,
@@ -37,8 +35,6 @@ CREATE TABLE `reduceDB` (
   `remainGlue` bigint(20) NOT NULL,
   `remainResolBinIrred` bigint(20) NOT NULL,
   `remainResolBinRed` bigint(20) NOT NULL,
-  `remainResolTriIrred` bigint(20) NOT NULL,
-  `remainResolTriRed` bigint(20) NOT NULL,
   `remainResolLIrred` bigint(20) NOT NULL,
   `remainResolLRed` bigint(20) NOT NULL,
   `remainAge` bigint(20) NOT NULL,
@@ -57,10 +53,8 @@ CREATE TABLE `restart` (
   `conflicts` bigint(20) NOT NULL,
   `runtime` float NOT NULL,
   `numIrredBins` int(20) NOT NULL,
-  `numIrredTris` int(20) NOT NULL,
   `numIrredLongs` int(20) NOT NULL,
   `numRedBins` int(20) NOT NULL,
-  `numRedTris` int(20) NOT NULL,
   `numRedLongs` int(20) NOT NULL,
   `numIrredLits` bigint(20) NOT NULL,
   `numredLits` bigint(20) NOT NULL,
@@ -94,24 +88,17 @@ CREATE TABLE `restart` (
   `trailDepthDeltaMax` int(20) NOT NULL,
   `propBinIrred` bigint(20) NOT NULL,
   `propBinRed` bigint(20) NOT NULL,
-  `propTriIrred` bigint(20) NOT NULL,
-  `propTriRed` bigint(20) NOT NULL,
   `propLongIrred` bigint(20) NOT NULL,
   `propLongRed` bigint(20) NOT NULL,
   `conflBinIrred` bigint(20) NOT NULL,
   `conflBinRed` bigint(20) NOT NULL,
-  `conflTriIrred` bigint(20) NOT NULL,
-  `conflTriRed` bigint(20) NOT NULL,
   `conflLongIrred` bigint(20) NOT NULL,
   `conflLongRed` bigint(20) NOT NULL,
   `learntUnits` int(20) NOT NULL,
   `learntBins` int(20) NOT NULL,
-  `learntTris` int(20) NOT NULL,
   `learntLongs` int(20) NOT NULL,
   `resolBinIrred` bigint(20) NOT NULL,
   `resolBinRed` bigint(20) NOT NULL,
-  `resolTriIrred` bigint(20) NOT NULL,
-  `resolTriRed` bigint(20) NOT NULL,
   `resolLIrred` bigint(20) NOT NULL,
   `resolLRed` bigint(20) NOT NULL,
   `propagations` bigint(20) NOT NULL,
@@ -189,8 +176,6 @@ CREATE TABLE `clauseStats` (
 
   `atedecents_binIrred` int(20) NOT NULL,
   `atedecents_binRed` int(20) NOT NULL,
-  `atedecents_triIrred` int(20) NOT NULL,
-  `atedecents_triRed` int(20) NOT NULL,
   `atedecents_longIrred` int(20) NOT NULL,
   `atedecents_longRed` int(20) NOT NULL,
 
@@ -198,8 +183,8 @@ CREATE TABLE `clauseStats` (
   `vsids_vars_var` double NOT NULL,
   `vsids_vars_max` double NOT NULL,
 
-  `antecedents_glue_long_reds_avg` double NOT NULL,
-  `antecedents_glue_long_reds_var` double NOT NULL,
+  `antecedents_glue_long_reds_avg` float NOT NULL,
+  `antecedents_glue_long_reds_var` float NOT NULL,
   `antecedents_glue_long_reds_min` int(20) NOT NULL,
   `antecedents_glue_long_reds_max` int(20) NOT NULL,
 
@@ -220,13 +205,13 @@ CREATE TABLE `clauseStats` (
 
   `antecedents_antecedents_vsids_avg` double NOT NULL,
 
-  `decision_level_hist` double NOT NULL,
-  `backtrack_level_hist` double NOT NULL,
-  `trail_depth_level_hist` double NOT NULL,
+  `decision_level_hist` float NOT NULL,
+  `backtrack_level_hist` float NOT NULL,
+  `trail_depth_level_hist` float NOT NULL,
   `vsids_vars_hist` double NOT NULL,
-  `size_hist` double NOT NULL,
-  `glue_hist` double NOT NULL,
-  `num_antecedents_hist` double NOT NULL
+  `size_hist` float NOT NULL,
+  `glue_hist` float NOT NULL,
+  `num_antecedents_hist` float NOT NULL
 );
 
 DROP TABLE IF EXISTS `goodClauses`;

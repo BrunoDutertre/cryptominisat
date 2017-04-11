@@ -40,7 +40,7 @@ import glob
 from verifier import *
 from functools import partial
 
-print("our CWD is: %s files here: %s" % (os.getcwd(), glob.glob("*")) )
+print("our CWD is: %s files here: %s" % (os.getcwd(), glob.glob("*")))
 sys.path.append(os.getcwd())
 print("our sys.path is", sys.path)
 
@@ -186,9 +186,10 @@ def print_version():
     print("Version values: %s" % consoleOutput.strip())
 
 fuzzers_noxor = [
-    ["../../build/tests/sha1-sat/sha1-gen --attack preimage --rounds 20",
+    ["../../build/tests/sha1-sat/sha1-gen --nocomment --attack preimage --rounds 20",
      "--hash-bits", "--seed"],
-    ["../../build/tests/sha1-sat/sha1-gen --attack preimage --zero --message-bits 400 --rounds 8 --hash-bits 60",
+    ["../../build/tests/sha1-sat/sha1-gen --nocomment --attack preimage --zero "
+        "--message-bits 400 --rounds 8 --hash-bits 60",
      "--seed"],
     # ["build/cnf-fuzz-nossum"],
     ["../../build/tests/cnf-utils/largefuzzer"],
@@ -272,10 +273,8 @@ class Tester:
             cmd += "--elimstrgy %s " % random.choice(["heuristic", "calculate"])
             cmd += "--elimcplxupd %s " % random.randint(0, 1)
             cmd += "--occredmax %s " % random.randint(0, 100)
-            cmd += "--noextbinsubs %s " % random.randint(0, 1)
             cmd += "--extscc %s " % random.randint(0, 1)
             cmd += "--distill %s " % random.randint(0, 1)
-            cmd += "--sortwatched %s " % random.randint(0, 1)
             cmd += "--recur %s " % random.randint(0, 1)
             cmd += "--compsfrom %d " % random.randint(0, 2)
             cmd += "--compsvar %d " % random.randint(20000, 500000)
@@ -298,7 +297,7 @@ class Tester:
         # the most buggy ones, don't turn them off much, please
         if random.choice([True, False]):
             opts = ["scc", "varelim", "comps", "strengthen", "probe", "intree",
-                    "binpri", "stamp", "cache", "otfsubsume",
+                    "stamp", "cache", "otfsubsume",
                     "renumber", "savemem", "moreminim", "gates", "bva",
                     "gorshort", "gandrem", "gateeqlit", "schedsimp", "presimp",
                     "elimcoststrategy"]
@@ -336,7 +335,7 @@ class Tester:
         sched_opts += "sub-impl, intree-probe, probe,"
         sched_opts += "sub-str-cls-with-bin, distill-cls, scc-vrepl, sub-impl,"
         sched_opts += "str-impl, cache-clean, sub-str-cls-with-bin, distill-cls, scc-vrepl,"
-        sched_opts += "occ-backw-sub-str, occ-xor, occ-clean-implicit, occ-bve, occ-bva, occ-gates,"
+        sched_opts += "occ-backw-sub-str, occ-xor, occ-clean-implicit, occ-bve, occ-bva,"
         sched_opts += "check-cache-size, renumber"
 
         sched = ",".join(create_rnd_sched(sched_opts))
@@ -389,7 +388,8 @@ class Tester:
         err_fname = unique_file("%s_err" % fname, ".out")
         err_file = open(err_fname, "w")
         p = subprocess.Popen(
-            command.rsplit(), stderr=err_file, stdout=subprocess.PIPE, preexec_fn=partial(setlimits, options.maxtime))
+            command.rsplit(), stderr=err_file, stdout=subprocess.PIPE,
+            preexec_fn=partial(setlimits, options.maxtime))
 
         # print time limit after child startup
         if options.verbose:

@@ -3,7 +3,6 @@
 
 from __future__ import print_function
 import os
-import time
 import boto
 import traceback
 import sys
@@ -20,7 +19,7 @@ config = ConfigParser.ConfigParser()
 config.read("/home/ubuntu/email.conf")
 
 
-def send_email(subject, text, fname = None):
+def send_email(subject, text, fname=None):
     msg = MIMEMultipart()
     msg['Subject'] = 'Email from solver: %s' % subject
     msg['From'] = 'msoos@msoos.org'
@@ -35,7 +34,7 @@ def send_email(subject, text, fname = None):
 
     # Attachment(s)
     if fname:
-        part = MIMEApplication(open(fname,"rb").read())
+        part = MIMEApplication(open(fname, "rb").read())
         part.add_header('Content-Disposition', 'attachment', filename="attachment.txt")
         msg.attach(part)
 

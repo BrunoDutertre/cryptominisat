@@ -26,7 +26,7 @@ For the --solver options you can give:
                       default=False, dest="verbose", help="Be more verbose"
                       )
 
-    parser.add_option("--numclients", "-c", default=1, type=int,
+    parser.add_option("--numclients", "-c", default=None, type=int,
                       dest="client_count", help="Number of clients to launch"
                       )
 
@@ -59,7 +59,7 @@ For the --solver options you can give:
                       )
 
     parser.add_option("--dir", default="/home/ubuntu/", dest="base_dir", type=str,
-                      help="The home dir of cryptominisat"
+                      help="The home dir of cryptominisat [default: %default]"
                       )
 
     parser.add_option("--solver",
@@ -119,6 +119,7 @@ For the --solver options you can give:
     options.logfile_name = options.base_dir + options.logfile_name
     options.s3_folder += "-" + time.strftime("%d-%B-%Y")
     options.s3_folder += "-%s" % rnd_id()
+    options.s3_folder += "-%s" % options.cnf_list
 
     return options, args
 
