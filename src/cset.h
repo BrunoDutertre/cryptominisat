@@ -87,29 +87,6 @@ class CSet {
         }
 
         /**
-        @brief Remove clause from set
-
-        Handles it correctly if the clause was not in the set anyway
-        */
-        bool exclude(const ClOffset offs) {
-            //Don't check for special value
-            assert(offs != std::numeric_limits< uint32_t >::max());
-
-            //not inside
-            if (offs >= where.size()
-                || where[offs] == std::numeric_limits<uint32_t>::max()
-            ) {
-                return false;
-            }
-
-            free.push_back(where[offs]);
-            which[where[offs]] = std::numeric_limits< uint32_t >::max();
-            where[offs] = std::numeric_limits<uint32_t>::max();
-
-            return true;
-        }
-
-        /**
         @brief Fully clear the set
         */
         void clear(void) {
@@ -126,7 +103,7 @@ class CSet {
         class iterator
         {
             public:
-                iterator(vector<ClOffset>::iterator _it) :
+                explicit iterator(vector<ClOffset>::iterator _it) :
                 it(_it)
                 {}
 
@@ -159,7 +136,7 @@ class CSet {
         class const_iterator
         {
             public:
-                const_iterator(vector<ClOffset>::const_iterator _it) :
+                explicit const_iterator(vector<ClOffset>::const_iterator _it) :
                 it(_it)
                 {}
 

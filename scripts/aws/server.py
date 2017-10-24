@@ -10,14 +10,12 @@ import pickle
 import time
 import pprint
 import traceback
-import subprocess
 import Queue
 import threading
 import logging
 import server_option_parser
 
 # for importing in systems where "." is not in the PATH
-import glob
 sys.path.append(os.getcwd())
 from common_aws import *
 import RequestSpotClient
@@ -36,7 +34,11 @@ def get_n_bytes_from_connection(sock, MSGLEN):
     return ''.join(chunks)
 
 
-def send_command(sock, command, tosend={}):
+def send_command(sock, command, tosend=None):
+    # note, this is a python issue, we can't set above tosend={}
+    # https://nedbatchelder.com/blog/200806/pylint.html
+    tosend = tosend or {}
+
     tosend["command"] = command
     tosend = pickle.dumps(tosend)
     tosend = struct.pack('!q', len(tosend)) + tosend
@@ -63,16 +65,9 @@ class Server (threading.Thread):
         os.system("aws s3 cp s3://msoos-solve-data/solvers/%s . --region us-west-2" % options.cnf_list)
         fnames = open(options.cnf_list, "r")
         logging.info("CNF list is file %s", options.cnf_list)
-        start = True
         num = 0
         for fname in fnames:
             fname = fname.strip()
-            if start:
-                self.cnf_dir = fname
-                logging.info("CNF dir is %s", self.cnf_dir)
-                start = False
-                continue
-
             self.files[num] = ToSolve(num, fname)
             self.files_available.append(num)
             logging.info("File added: %s", fname)
@@ -115,6 +110,8 @@ class Server (threading.Thread):
             ret = os.system("aws s3 mv s3://%s/%s s3://%s/%s --region us-west-2" %
                             (options.s3_bucket, fnames[0], options.s3_bucket,
                              fnames[1]))
+            if ret:
+                logging.warn("Renaming file to final name failed!")
 
     def check_for_dead_files(self):
         this_time = time.time()
@@ -176,11 +173,10 @@ class Server (threading.Thread):
         tosend["stats"] = options.stats
         tosend["gauss"] = options.gauss
         tosend["s3_bucket"] = options.s3_bucket
-        tosend["s3_folder"] = options.s3_folder
+        tosend["given_folder"] = options.given_folder
         tosend["timeout_in_secs"] = options.timeout_in_secs
         tosend["mem_limit_in_mb"] = options.mem_limit_in_mb
         tosend["noshutdown"] = options.noshutdown
-        tosend["cnf_dir"] = self.cnf_dir
         tosend["extra_opts"] = options.extra_opts
         tosend["drat"] = options.drat
 
@@ -260,7 +256,6 @@ class Listener (threading.Thread):
 
     def __init__(self):
         threading.Thread.__init__(self)
-        pass
 
     def listen_to_connection(self):
         # Create a TCP/IP socket
@@ -297,10 +292,11 @@ class Listener (threading.Thread):
 
 class SpotManager (threading.Thread):
 
-    def __init__(self, noshutdown):
+    def __init__(self):
         threading.Thread.__init__(self)
         self.spot_creator = RequestSpotClient.RequestSpotClient(
-            options.cnf_list == "test", noshutdown=noshutdown,
+            options.git_rev,
+            ("test" in options.cnf_list), noshutdown=options.noshutdown,
             count=options.client_count)
 
     def run(self):
@@ -328,10 +324,12 @@ def shutdown(exitval=0):
         else:
             email_subject += "FAIL"
 
-        full_s3_folder = get_s3_folder(options.s3_folder,
-                                       options.git_rev,
-                                       options.timeout_in_secs,
-                                       options.mem_limit_in_mb)
+        full_s3_folder = get_s3_folder(
+            options.given_folder,
+            options.git_rev,
+            options.solver,
+            options.timeout_in_secs,
+            options.mem_limit_in_mb)
         text = """Server finished. Please download the final data:
 
 mkdir {0}
@@ -359,7 +357,6 @@ So long and thanks for all the fish!
 
     if not options.noshutdown:
         os.system(toexec)
-        pass
 
     exit(exitval)
 
@@ -398,7 +395,7 @@ if __name__ == "__main__":
 
     server = Server()
     listener = Listener()
-    spotmanager = SpotManager(options.noshutdown)
+    spotmanager = SpotManager()
     listener.setDaemon(True)
     server.setDaemon(True)
     spotmanager.setDaemon(True)

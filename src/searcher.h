@@ -74,7 +74,7 @@ class Searcher : public HyperEngine
         void reduce_db_if_needed();
         bool clean_clauses_if_needed();
         lbool perform_scc_and_varreplace_if_needed();
-        void dump_search_loop_stats();
+        void dump_search_loop_stats(double myTime);
         bool must_abort(lbool status);
         void print_search_loop_num();
         uint64_t loop_num;
@@ -94,9 +94,9 @@ class Searcher : public HyperEngine
         uint64_t lastRestartPrintHeader = 0;
         void     print_restart_stat();
         void     print_iteration_solving_stats();
-        void     print_restart_header() const;
+        void     print_restart_header();
         void     print_restart_stat_line() const;
-        void     printBaseStats() const;
+        void     print_restart_stats_base() const;
         void     print_clause_stats() const;
         uint64_t sumRestarts() const;
         const SearchHist& getHistory() const;
@@ -196,7 +196,13 @@ class Searcher : public HyperEngine
         //we cannot eliminate / component-handle such vars
         //Needed so checking is fast
         vector<char> assumptionsSet;
-        vector<AssumptionPair> assumptions; ///< Current set of assumptions provided to solve by the user
+
+        //Note that this array can have the same internal variable more than
+        //once, in case one has been replaced with the other. So if var 1 =  var 2
+        //and var 1 was set to TRUE and var 2 to be FALSE, then we'll have var 1
+        //insided this array twice, once it needs to be set to TRUE and once FALSE
+        vector<AssumptionPair> assumptions;
+
         void update_assump_conflict_to_orig_outside(vector<Lit>& out_conflict);
 
 
@@ -375,12 +381,8 @@ class Searcher : public HyperEngine
         double cla_inc;
         void decayClauseAct();
         unsigned guess_clause_array(
-            const uint32_t glue
+            const ClauseStats& glue
             , const uint32_t backtrack_lev
-            , const double vsids_cutoff
-            , double backtrack_cutoff = 0.2
-            , const double offset_percent = 0.0
-            , bool count_antec_glue_long_reds = false
         ) const;
 
         //SQL
@@ -471,11 +473,12 @@ inline void Searcher::bumpClauseAct(Clause* cl)
 {
     assert(!cl->getRemoved());
 
-    cl->stats.activity += cla_inc;
-    if (cl->stats.activity > 1e20 ) {
+    double new_val = cla_inc + (double)cl->stats.activity;
+    cl->stats.activity = (float)new_val;
+    if (cl->stats.activity > 1e20F ) {
         // Rescale
         for(ClOffset offs: longRedCls[2]) {
-            cl_alloc.ptr(offs)->stats.activity *= 1e-20;
+            cl_alloc.ptr(offs)->stats.activity *= static_cast<float>(1e-20);
         }
         cla_inc *= 1e-20;
     }

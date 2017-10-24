@@ -39,22 +39,21 @@ using std::endl;
 #include "cryptominisat5/cryptominisat.h"
 #include "dimacsparser.h"
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:4706) // Assignment within conditional expression
+                              // -- used in parsing args
+#endif
+
 using namespace CMSat;
 std::ostream* dratf;
-
-#ifdef USE_ZLIB
-static int gz_read(void* buf, size_t num, size_t count, gzFile f)
-{
-    return gzread(f, buf, num*count);
-}
-#endif
 
 SATSolver* solver;
 bool zero_exit_status = false;
 static void SIGINT_handler(int) {
-    printf("\n"); printf("*** INTERRUPTED ***\n");
+    cout << "\n*** INTERRUPTED ***\n";
     solver->print_stats();
-    printf("\n"); printf("*** INTERRUPTED ***\n");
+    cout << "\n*** INTERRUPTED ***\n";
     exit(1);
 }
 
@@ -123,14 +122,15 @@ void handle_drat_option(SolverConf& conf, const char* dratfilname)
 
 void printUsage(char** argv)
 {
-    printf("USAGE: %s [options] <input-file> \n\n  where input is plain DIMACS.\n\n", argv[0]);
-    printf("OPTIONS:\n\n");
-    printf("  --verb          = [0...] Sets verbosity level. Anything higher\n");
-    printf("                           than 2 will give debug log\n");
-    printf("  --drat          = {0,1}  Sets whether DRAT should be dumped to\n");
-    printf("                           the console as per SAT COMPETITION'14 guidelines\n");
-    printf("  --threads       = [1...] Sets number of threads\n");
-    printf("\n");
+    cout << "USAGE:"
+    << argv[0] << " [options] <input-file> \n\n  where input is plain DIMACS.\n\n";
+    cout << "OPTIONS:\n\n";
+    cout << "  --verb          = [0...] Sets verbosity level. Anything higher\n";
+    cout << "                           than 2 will give debug log\n";
+    cout << "  --drat          = {0,1}  Sets whether DRAT should be dumped to\n";
+    cout << "                           the console as per SAT COMPETITION'14 guidelines\n";
+    cout << "  --threads       = [1...] Sets number of threads\n";
+    cout << "\n";
 }
 
 const char* hasPrefix(const char* str, const char* prefix)
@@ -150,27 +150,27 @@ int main(int argc, char** argv)
 
     int i, j;
     long int num_threads = 1;
-    const char* value;
     for (i = j = 0; i < argc; i++){
+        const char* value;
         if ((value = hasPrefix(argv[i], "--drat="))){
             handle_drat_option(conf, value);
         }else if ((value = hasPrefix(argv[i], "--verb="))){
             long int verbosity = (int)strtol(value, NULL, 10);
             if (verbosity == 0 && errno == EINVAL){
-                printf("ERROR! illegal verbosity level %s\n", value);
+                cout << "ERROR! illegal verbosity level" << value << endl;
                 exit(0);
             }
             conf.verbosity = verbosity;
         }else if ((value = hasPrefix(argv[i], "--threads="))){
             num_threads  = (int)strtol(value, NULL, 10);
             if (num_threads == 0 && errno == EINVAL){
-                printf("ERROR! illegal threads %s\n", value);
+                cout << "ERROR! illegal threads " << value << endl;
                 exit(0);
             }
         }else if ((value = hasPrefix(argv[i], "--reconf="))){
             long int reconf  = (int)strtol(value, NULL, 10);
             if (reconf == 0 && errno == EINVAL){
-                printf("ERROR! illegal threads %s\n", value);
+                cout << "ERROR! illegal threads " << value << endl;
                 exit(0);
             }
             conf.reconfigure_val = reconf;
@@ -181,7 +181,7 @@ int main(int argc, char** argv)
             exit(0);
 
         }else if (strncmp(argv[i], "-", 1) == 0){
-            printf("ERROR! unknown flag %s\n", argv[i]);
+            cout << "ERROR! unknown flag" << argv[i] << endl;
             exit(0);
 
         }else
@@ -202,17 +202,18 @@ int main(int argc, char** argv)
 
     if (conf.verbosity) {
         printVersionInfo();
+        cout << "c NOTE: this is a SIMPLIFIED executable. For the full experience, you need to compile/obtain/use the 'cryptominisat5' executable. To compile that, you need the boost libraries. Please read the README." << endl;
     }
     double cpu_time = cpuTime();
 
     solver = &S;
     signal(SIGINT,SIGINT_handler);
-    #if !defined (_MSC_VER)
+    #if !defined (_WIN32)
     signal(SIGHUP,SIGINT_handler);
     #endif
 
     if (argc == 1) {
-        printf("Reading from standard input... Use '-h' or '--help' for help.\n");
+        cout << "Reading from standard input... Use '-h' or '--help' for help.\n";
         #ifndef USE_ZLIB
         FILE* in = stdin;
         DimacsParser<StreamBuffer<FILE*, FN> > parser(solver, "", conf.verbosity);
@@ -267,14 +268,15 @@ int main(int argc, char** argv)
 
     double parse_time = cpuTime() - cpu_time;
     if (conf.verbosity) {
-        printf("c  Parsing time: %-12.2f s\n", parse_time);
+        cout << "c  Parsing time: "
+        << std::fixed << std::setprecision(2) << parse_time << " s" << endl;
     }
 
     lbool ret = S.solve();
     if (conf.verbosity) {
         S.print_stats();
     }
-    printf(ret == l_True ? "s SATISFIABLE\n" : "s UNSATISFIABLE\n");
+    cout << (ret == l_True ? "s SATISFIABLE" : "s UNSATISFIABLE") << endl;
     if (ret == l_True) {
         print_model(&std::cout, solver);
     }
@@ -292,3 +294,7 @@ int main(int argc, char** argv)
         return ret == l_True ? 10 : 20;
     }
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif

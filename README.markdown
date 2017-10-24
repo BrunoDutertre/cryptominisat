@@ -1,11 +1,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Linux build](https://travis-ci.org/msoos/cryptominisat.svg?branch=master)](https://travis-ci.org/msoos/cryptominisat)
 [![Windows build](https://ci.appveyor.com/api/projects/status/8d000iy63xu7eau5?svg=true)](https://ci.appveyor.com/project/msoos/cryptominisat)
-<a href="https://scan.coverity.com/projects/507">
-  <img alt="Coverity Scan Build Status"
-       src="https://scan.coverity.com/projects/507/badge.svg"/>
-</a>
+[![Coverity](https://scan.coverity.com/projects/507/badge.svg)](https://scan.coverity.com/projects/507)
 [![code coverage](https://coveralls.io/repos/msoos/cryptominisat/badge.svg?branch=master)](https://coveralls.io/r/msoos/cryptominisat?branch=master)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/f043efa22ea64e9ba44fde0f3a4fb09f)](https://www.codacy.com/app/soos.mate/cryptominisat?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=msoos/cryptominisat&amp;utm_campaign=Badge_Grade)
+[![Docker Hub](https://img.shields.io/badge/docker-latest-blue.svg)](https://hub.docker.com/r/msoos/cryptominisat/)
+
 
 CryptoMiniSat SAT solver
 ===========================================
@@ -19,52 +19,80 @@ that it allows for a more efficient system, with assumptions and multiple
 `solve()` calls. A C compatible wrapper is also provided. The python interface provides
 a high-level yet efficient API to use most of the C++ interface with ease.
 
-
-Prerequisites
+Docker usage
 -----
 
-You need to have the following installed in case you use Debian or Ubuntu -- for
-other distros, the packages should be similarly named:
+To run on file `myfile.cnf`:
+
 ```
-$ sudo apt-get install build-essential cmake
+docker pull msoos/cryptominisat
+cat myfile.cnf | docker run --rm -i msoos/cryptominisat
 ```
 
-The following are not required but are *very* useful:
+To run on a hand-written CNF:
+
 ```
-$ sudo apt-get install libboost-program-options-dev libm4ri-dev libsqlite3-dev
+docker pull msoos/cryptominisat
+echo "1 2 0" | docker run --rm -i msoos/cryptominisat
 ```
 
-Compiling and installing under Linux
+To run on the file `/home/myfolder/myfile.cnf.gz` by mounting it (may be faster):
+
+```
+docker pull msoos/cryptominisat
+docker run --rm -v /home/myfolder/myfile.cnf.gz:/f msoos/cryptominisat f
+```
+
+To build and run locally:
+
+```
+git submodule update --init
+docker build -t cms .
+cat myfile.cnf | docker run --rm -i cms
+```
+
+To build and run the web interface:
+
+```
+git submodule update --init
+docker build -t cmsweb -f Dockerfile.web .
+docker run --rm -i -p 80:80 cmsweb
+```
+
+
+Compiling in Linux
 -----
 
-Build:
-=======
-You have to use cmake to compile and install:
+To build and install, issue:
 
 ```
-$ tar xzvf cryptominisat-version.tar.gz
-$ cd cryptominisat-version
-$ cmake .
-$ make
+sudo apt-get install build-essential cmake
+# not required but very useful
+sudo apt-get install libzip-dev libboost-program-options-dev libm4ri-dev libsqlite3-dev
+tar xzvf cryptominisat-version.tar.gz
+cd cryptominisat-version
+cmake .
+make
+sudo make install
+sudo ldconfig
 ```
 
-Install:
-
-```
-$ sudo make install
-$ sudo ldconfig
-```
-
-Once cryptominisat is installed, the binary is available under
-`/usr/local/bin/cryptominisat5`, the library shared library is available
-under `/usr/local/lib/libcryptominisat5.so` and the 3 header files are
-available under `/usr/local/include/cryptominisat5/`.You can uninstall
-both by executing `sudo make uninstall`.
-
-Compiling under Windows
+Compiling in Mac OSX
 -----
 
-You will need Vim for Windows to be installed, see the download website at http://www.vim.org/download.php/#pc This is because we need the "xxd" executable. Then you need to perform the following for Visual Studio 2015:
+```
+brew install cmake boost zlib
+tar xzvf cryptominisat-version.tar.gz
+cd cryptominisat-version
+cmake .
+make
+sudo make install
+```
+
+Compiling in Windows
+-----
+
+You will need python installed, then for Visual Studio 2015:
 
 ```
 C:\> [ download cryptominisat-version.zip ]
@@ -97,7 +125,8 @@ C:\cms\build> cmake -G "Visual Studio 14 2015 Win64" -DCMAKE_BUILD_TYPE=Release 
 C:\cms\build> cmake --build --config Release .
 ```
 
-This should build the static Windows binary under `C:\cms\build\Release\cryptominisat5.exe`.
+You now have the static binary under `C:\cms\build\Release\cryptominisat5.exe`
+
 
 Command-line usage
 -----
@@ -115,7 +144,7 @@ The files has 3 clauses and 2 variables, this is reflected in the header
 must be False, and either 1 has to be False, 2 has to be True or 3 has to be
 True. The only solution to this problem is:
 ```
-$ cryptominisat5 --verb 0 file.cnf
+cryptominisat5 --verb 0 file.cnf
 s SATISFIABLE
 v 1 -2 3 0
 ```
@@ -133,9 +162,22 @@ Then there is no solution and the solver returns `s UNSATISFIABLE`.
 
 Python usage
 -----
+The python module must be compiled as per:
 
-The python module is under the directory `python`. You have to first compile
-and install this module, as explained above. You can then use it as:
+```
+sudo apt-get install build-essential cmake
+sudo apt-get install libzip-dev libboost-program-options-dev libm4ri-dev libsqlite3-dev
+sudo apt-get install python-setuptools python-dev
+tar xzvf cryptominisat-version.tar.gz
+cd cryptominisat-version
+cmake .
+make
+sudo make install
+sudo ldconfig
+
+```
+
+You can then use it as:
 
 ```
 >>> from pycryptosat import Solver
@@ -165,7 +207,7 @@ True
 (None, True, False, True)
 ```
 
-For more detailed instruction, please see the README.rst under the `python`
+For more detailed usage instructions, please see the README.rst under the `python`
 directory.
 
 Library usage
@@ -316,11 +358,13 @@ It is a good idea to put `renumber` as late as possible, as it renumbers the var
 
 Gaussian elimination
 -----
-For building with Gaussian Elimination, you need to perform:
+For building with Gaussian Elimination, you need to build as per:
 
 ```
-git clone https://github.com/msoos/cryptominisat.git
-cd cryptominisat
+sudo apt-get install build-essential cmake
+sudo apt-get install libzip-dev libboost-program-options-dev libm4ri-dev libsqlite3-dev
+tar xzvf cryptominisat-version.tar.gz
+cd cryptominisat-version
 mkdir build && cd build
 cmake -DUSE_GAUSS=ON ..
 make
@@ -334,11 +378,11 @@ Gauss options:
                               effectively are moving the start to the last
                               column updated
   --maxmatrixrows arg (=3000) Set maximum no. of rows for gaussian matrix. Too
-                              large matrixesshould bee discarded for reasons of
+                              large matrixes should be discarded for reasons of
                               efficiency
   --autodisablegauss arg (=1) Automatically disable gauss when performing badly
   --minmatrixrows arg (=5)    Set minimum no. of rows for gaussian matrix.
-                              Normally, too smallmatrixes are discarded for
+                              Normally, too small matrixes are discarded for
                               reasons of efficiency
   --savematrix arg (=2)       Save matrix every Nth decision level
   --maxnummatrixes arg (=3)   Maximum number of matrixes to treat.
@@ -346,26 +390,58 @@ Gauss options:
 
 Testing
 -----
-For testing you will need the GIT checkout and get the submodules:
+For testing you will need the GIT checkout and build as per:
 
 ```
+sudo apt-get install build-essential cmake
+sudo apt-get install libzip-dev libboost-program-options-dev libm4ri-dev libsqlite3-dev
+sudo apt-get install git python-pip python-setuptools python-dev
+pip install pip
 git clone https://github.com/msoos/cryptominisat.git
 cd cryptominisat
 git submodule update --init
-```
-
-Then you need to build with `-DENABLE_TESTING=ON`, build and run the tests:
-
-```
 mkdir build && cd build
 cmake -DENABLE_TESTING=ON ..
 make -j4
 make test
+sudo make install
+sudo ldconfig
 ```
 
-Web-based run explorer
+Fuzzing
 -----
-Please see under web/README.markdown for details. This is an experimental feature.
+Build for test as per above, then:
+
+```
+# you are currently in cryptomnisat/build
+sudo apt-get install valgrind
+cd ../../
+git clone https://github.com/msoos/lingeling-ala
+cd lingeling-ala
+./configure
+make
+sudo cp lingeling /usr/local/bin/
+cd ../cryptominisat/scripts/fuzz/
+./fuzz_test.py
+
+```
+
+Configuring a build for a minimal binary&library
+-----
+The following configures the system to build a bare minimal binary&library. It needs a compiler, but nothing much else:
+
+```
+cmake -DONLY_SIMPLE=ON -DNOZLIB=ON -DNOM4RI=ON -DSTATS=OFF -DNOVALGRIND=ON -DENABLE_TESTING=OFF .
+```
+
+DRAT and ID generation
+-----
+
+```
+./cryptominisat5 6s153.cnf.gz  --sql 1 --sqlitedb test.db --sqlfull 1 --clid drat.out
+```
+
+
 
 C usage
 -----

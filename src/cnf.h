@@ -101,6 +101,12 @@ public:
 
     //Clauses
     vector<ClOffset> longIrredCls;
+
+    /**
+    level 0 = never remove
+    level 1 = check rarely
+    level 2 = check often
+    **/
     vector<vector<ClOffset> > longRedCls;
     vector<Xor> xorclauses;
     BinTriStats binTri;
@@ -341,7 +347,7 @@ void CNF::for_each_lit_except_watched(
 
 struct ClauseSizeSorter
 {
-    ClauseSizeSorter(const ClauseAllocator& _cl_alloc) :
+    explicit ClauseSizeSorter(const ClauseAllocator& _cl_alloc) :
         cl_alloc(_cl_alloc)
     {}
     bool operator () (const ClOffset x, const ClOffset y);

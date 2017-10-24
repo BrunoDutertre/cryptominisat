@@ -20,8 +20,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ***********************************************/
 
-#ifndef _FEATURES_TO_RECONF_H_
-#define _FEATURES_TO_RECONF_H_
 
 #include "solvefeatures.h"
 #include <iostream>
@@ -33,13 +31,9 @@ namespace CMSat {
 double get_score0(const SolveFeatures& feat, const int verb);
 double get_score7(const SolveFeatures& feat, const int verb);
 
-int get_reconf_from_features(const SolveFeatures& feat, const int verb)
+int get_reconf_from_features(const SolveFeatures& /*feat*/, const int /*verb*/)
 {
 	return 0;
 }
 
 } //end namespace
-
-#endif //_FEATURES_TO_RECONF_H_
-
-

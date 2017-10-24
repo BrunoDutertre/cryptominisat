@@ -20,6 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ***********************************************/
 
+#ifndef TEST_HELPER__H
+#define TEST_HELPER__H
+
 #ifdef KLEE
 #include <klee/klee.h>
 #define EXPECT_EQ(a, b) klee_assume((a) == (b))
@@ -33,6 +36,8 @@ THE SOFTWARE.
 #include <ostream>
 #include <iostream>
 #include <sstream>
+#include <functional>
+#include <cctype>
 #include <cassert>
 #include "src/solver.h"
 #include "src/stamp.h"
@@ -575,3 +580,5 @@ uint32_t count_num_undef_in_solution(const Solver* s)
 //     }
 //     return m.str();
 // }
+
+#endif //TEST_HELPER__H

@@ -9,9 +9,6 @@ import subprocess
 import server_option_parser
 
 
-print("NOTE: you have to give options to cryptominisat as --opt \"--keepguess=1,--keepglue=4\"")
-
-
 def get_answer():
     yes = set(['yes', 'y', 'ye'])
     no = set(['no', 'n'])
@@ -31,6 +28,7 @@ def push():
     ret = os.system("git push")
     if ret != 0:
         print("Oops, couldn't push, exiting before executing")
+        exit(-1)
 
     print("")
 
@@ -58,7 +56,7 @@ if __name__ == "__main__":
         opt_is_on = True
         data += "--opt \""
 
-    if ("--git" not in data) and ("--solver" not in data):
+    if ("--git" not in data):
         revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
         data += " --git %s" % revision
 
@@ -79,7 +77,9 @@ if __name__ == "__main__":
 set -e
 
 apt-get update
-apt-get -y install git python-boto awscli
+apt-get -y install git python-pip
+pip install --force-reinstall --upgrade awscli
+pip install --force-reinstall --upgrade boto
 
 cd /home/ubuntu
 sudo -H -u ubuntu bash -c 'ssh-keyscan github.com >> ~/.ssh/known_hosts'

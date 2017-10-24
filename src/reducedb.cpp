@@ -30,7 +30,7 @@ using namespace CMSat;
 
 struct SortRedClsGlue
 {
-    SortRedClsGlue(ClauseAllocator& _cl_alloc) :
+    explicit SortRedClsGlue(ClauseAllocator& _cl_alloc) :
         cl_alloc(_cl_alloc)
     {}
     ClauseAllocator& cl_alloc;
@@ -45,7 +45,7 @@ struct SortRedClsGlue
 
 struct SortRedClsSize
 {
-    SortRedClsSize(ClauseAllocator& _cl_alloc) :
+    explicit SortRedClsSize(ClauseAllocator& _cl_alloc) :
         cl_alloc(_cl_alloc)
     {}
     ClauseAllocator& cl_alloc;
@@ -60,7 +60,7 @@ struct SortRedClsSize
 
 struct SortRedClsAct
 {
-    SortRedClsAct(ClauseAllocator& _cl_alloc) :
+    explicit SortRedClsAct(ClauseAllocator& _cl_alloc) :
         cl_alloc(_cl_alloc)
     {}
     ClauseAllocator& cl_alloc;
@@ -99,14 +99,13 @@ void ReduceDB::sort_red_cls(ClauseClean clean_type)
 
 //TODO maybe we chould count binary learnt clauses as well into the
 //kept no. of clauses as other solvers do
-CleaningStats ReduceDB::reduceDB()
+void ReduceDB::handle_lev2()
 {
+    nbReduceDB_lev1++;
+    solver->dump_memory_stats_to_sql();
+
     const double myTime = cpuTime();
     assert(solver->watches.get_smudged_list().empty());
-    nbReduceDB++;
-    CleaningStats tmpStats;
-    tmpStats.origNumClauses = solver->longRedCls[2].size();
-    tmpStats.origNumLits = solver->litStats.redLits;
 
     //lev2 -- clean
     int64_t num_to_reduce = solver->longRedCls[2].size();
@@ -125,7 +124,7 @@ CleaningStats ReduceDB::reduceDB()
     cl_marked = 0;
     cl_ttl = 0;
     cl_locked_solver = 0;
-    remove_cl_from_array_and_count_stats(tmpStats);
+    remove_cl_from_lev2();
 
     solver->clean_occur_from_removed_clauses_only_smudged();
     for(ClOffset offset: delayed_clause_free) {
@@ -137,35 +136,33 @@ CleaningStats ReduceDB::reduceDB()
     solver->check_no_removed_or_freed_cl_in_watch();
     #endif
 
-    tmpStats.cpu_time = cpuTime() - myTime;
-    if (solver->conf.verbosity >= 4)
-        tmpStats.print(0);
-    else if (solver->conf.verbosity >= 3) {
-        tmpStats.print_short(solver);
-    } else if (solver->conf.verbosity) {
+    if (solver->conf.verbosity) {
         cout << "c [DBclean lev2]"
         << " marked: " << cl_marked
         << " ttl:" << cl_ttl
         << " locked_solver:" << cl_locked_solver
-        << solver->conf.print_times(tmpStats.cpu_time)
+        << solver->conf.print_times(cpuTime()-myTime)
         << endl;
     }
-    cleaningStats += tmpStats;
 
     if (solver->sqlStats) {
         solver->sqlStats->time_passed_min(
             solver
-            , "dbclean"
-            , tmpStats.cpu_time
+            , "dbclean-lev2"
+            , cpuTime()-myTime
         );
     }
+    total_time += cpuTime()-myTime;
 
     last_reducedb_num_conflicts = solver->sumConflicts;
-    return tmpStats;
+    if (solver->sqlStats) {
+        //solver->sqlStats->reduceDB(2, nbReduceDB_lev2, solver);
+    }
 }
 
 void ReduceDB::handle_lev1()
 {
+    nbReduceDB_lev1++;
     uint32_t moved_w0 = 0;
     uint32_t used_recently = 0;
     uint32_t non_recent_use = 0;
@@ -203,10 +200,23 @@ void ReduceDB::handle_lev1()
     if (solver->conf.verbosity) {
         cout << "c [DBclean lev1]"
         << " used recently: " << used_recently
-        << " not used recently:" << non_recent_use
+        << " not used recently: " << non_recent_use
         << " moved w0: " << moved_w0
-        << solver->conf.print_times(myTime)
+        << solver->conf.print_times(cpuTime()-myTime)
         << endl;
+    }
+
+    if (solver->sqlStats) {
+        solver->sqlStats->time_passed_min(
+            solver
+            , "dbclean-lev1"
+            , cpuTime()-myTime
+        );
+    }
+    total_time += cpuTime()-myTime;
+
+    if (solver->sqlStats) {
+        //solver->sqlStats->reduceDB(1, nbReduceDB_lev1, solver);
     }
 }
 
@@ -250,13 +260,10 @@ bool ReduceDB::cl_needs_removal(const Clause* cl, const ClOffset offset) const
     return !cl->used_in_xor()
          && !cl->stats.marked_clause
          && cl->stats.ttl == 0
-         && cl->stats.which_red_array > 0
          && !solver->clause_locked(*cl, offset);
 }
 
-void ReduceDB::remove_cl_from_array_and_count_stats(
-    CleaningStats& tmpStats
-) {
+void ReduceDB::remove_cl_from_lev2() {
     size_t i, j;
     for (i = j = 0
         ; i < solver->longRedCls[2].size()
@@ -266,19 +273,24 @@ void ReduceDB::remove_cl_from_array_and_count_stats(
         Clause* cl = solver->cl_alloc.ptr(offset);
         assert(cl->size() > 2);
 
+        // check and move to lower (better) levels, if possible
         if (cl->stats.glue <= solver->conf.glue_put_lev0_if_below_or_eq) {
             cl->stats.which_red_array = 0;
         }
 
-        if (cl->stats.glue <= solver->conf.glue_put_lev1_if_below_or_eq) {
+        if (cl->stats.glue <= solver->conf.glue_put_lev1_if_below_or_eq
+            && solver->conf.glue_put_lev1_if_below_or_eq != 0
+        ) {
             cl->stats.which_red_array = 1;
         }
 
-        if (cl->stats.which_red_array != 2) {
+        if (cl->stats.which_red_array < 2) {
             solver->longRedCls[cl->stats.which_red_array].push_back(offset);
             continue;
         }
+        assert(cl->stats.which_red_array == 2);
 
+        //Check if locked, or marked or ttl-ed
         if (cl->stats.marked_clause) {
             cl_marked++;
         } else if (cl->stats.ttl != 0) {
@@ -292,7 +304,6 @@ void ReduceDB::remove_cl_from_array_and_count_stats(
                 cl->stats.ttl--;
             }
             solver->longRedCls[2][j++] = offset;
-            tmpStats.remain.incorporate(cl, solver->sumConflicts);
             cl->stats.marked_clause = 0;
             continue;
         }
@@ -301,40 +312,10 @@ void ReduceDB::remove_cl_from_array_and_count_stats(
         cl->setRemoved();
         solver->watches.smudge((*cl)[0]);
         solver->watches.smudge((*cl)[1]);
-        tmpStats.removed.incorporate(cl, solver->sumConflicts);
         solver->litStats.redLits -= cl->size();
 
         *solver->drat << del << *cl << fin;
         delayed_clause_free.push_back(offset);
     }
     solver->longRedCls[2].resize(j);
-}
-
-void ReduceDB::reduce_db_and_update_reset_stats()
-{
-    solver->dump_memory_stats_to_sql();
-
-    CleaningStats iterCleanStat = reduceDB();
-    ClauseUsageStats stats0;
-    ClauseUsageStats stats1;
-
-    if (solver->sqlStats) {
-        solver->sqlStats->reduceDB(stats0, stats1, iterCleanStat, solver);
-    }
-}
-
-ClauseUsageStats ReduceDB::sumClauseData(
-    const vector<ClOffset>& toprint
-) const {
-    ClauseUsageStats stats;
-
-    for(ClOffset offset: toprint) {
-        const Clause& cl = *solver->cl_alloc.ptr(offset);
-        stats.addStat(cl);
-
-        if (solver->conf.verbosity >= 6)
-            cl.print_extra_stats();
-    }
-
-    return stats;
 }

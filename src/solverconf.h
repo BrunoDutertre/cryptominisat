@@ -76,6 +76,9 @@ inline std::string getNameOfRestartType(Restart rest_type)
         case Restart::geom:
             return "geometric";
 
+        case Restart::glue_geom:
+            return "regularly switch between glue and geometric";
+
         case Restart::luby:
             return "luby";
 
@@ -83,7 +86,7 @@ inline std::string getNameOfRestartType(Restart rest_type)
             return "never";
 
         default:
-            release_assert(false && "Unknown clause cleaning type?");
+            assert(false && "Unknown clause cleaning type?");
     };
 }
 
@@ -155,17 +158,18 @@ class DLL_PUBLIC SolverConf
         //if non-zero, we reduce at every X conflicts.
         //Otherwise we geometrically keep around max_temp_lev2_learnt_clauses*(inc**N)
         unsigned every_lev2_reduce;
-        uint32_t must_touch_lev1_within;
 
+        uint32_t must_touch_lev1_within;
         unsigned  max_temp_lev2_learnt_clauses;
         double    inc_max_temp_lev2_red_cls;
 
         unsigned protect_cl_if_improved_glue_below_this_glue_for_one_turn;
-        double    ratio_keep_clauses[2]; ///< Remove this ratio of clauses at every database reduction round
-        double    clause_decay;
-        unsigned  min_time_in_db_before_eligible_for_cleaning;
         unsigned glue_put_lev0_if_below_or_eq;
         unsigned glue_put_lev1_if_below_or_eq;
+        double    ratio_keep_clauses[2]; ///< Remove this ratio of clauses at every database reduction round
+
+        double    clause_decay;
+        unsigned  min_time_in_db_before_eligible_for_cleaning;
 
         //If too many (in percentage) low glues after min_num_confl_adjust_glue_cutoff, adjust glue lower
         double   adjust_glue_if_too_many_low;
@@ -204,6 +208,7 @@ class DLL_PUBLIC SolverConf
         int  doPrintGateDot; ///< Print DOT file of gates
         int  doPrintConflDot; ///< Print DOT file for each conflict
         int  print_full_restart_stat;
+        int  print_all_restarts;
         int  verbStats;
         int do_print_times; ///Print times during verbose output
         int print_restart_line_every_n_confl;
@@ -238,8 +243,8 @@ class DLL_PUBLIC SolverConf
         long long empty_varelim_time_limitM;
         long long varelim_time_limitM;
         int      updateVarElimComplexityOTF;
-        unsigned updateVarElimComplexityOTF_limitvars;
-        unsigned updateVarElimComplexityOTF_limitavg;
+        uint64_t updateVarElimComplexityOTF_limitvars;
+        uint64_t updateVarElimComplexityOTF_limitavg;
         ElimStrategy  var_elim_strategy; ///<Guess varelim order, or calculate?
         int      varElimCostEstimateStrategy;
         double    varElimRatioPerIter;

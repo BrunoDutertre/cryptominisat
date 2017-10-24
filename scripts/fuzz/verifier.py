@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2016  Mate Soos
@@ -57,7 +57,6 @@ def setlimits(maxtime):
 class solution_parser:
     def __init__(self, options):
         self.options = options
-        pass
 
     @staticmethod
     def test_found_solution(solution, fname, debugLibPart=None):
@@ -91,14 +90,20 @@ class solution_parser:
                 return
 
             # check solution against clause
-            if line[0] != 'c' and line[0] != 'p':
-                if line[0] != 'x':
-                    solution_parser._check_regular_clause(line, solution)
-                else:
-                    assert line[0] == 'x', "Line must start with p, c, v or x"
-                    solution_parser._check_xor_clause(line, solution)
+            try:
+                if line[0] != 'c' and line[0] != 'p':
+                    if line[0] != 'x':
+                        solution_parser._check_regular_clause(line, solution)
+                    else:
+                        assert line[0] == 'x', "Line must start with p, c, v or x"
+                        solution_parser._check_xor_clause(line, solution)
 
                 clauses += 1
+            except:
+                if debugLibPart is not None:
+                    print("--> Error in part: %s. We are reading up to and including part: %s"
+                          % (thisDebugLibPart, debugLibPart-1))
+                raise
 
         f.close()
         print("Verified %d original xor&regular clauses" % clauses)
@@ -387,7 +392,6 @@ class solution_parser:
     @staticmethod
     def _check_regular_clause(line, solution):
         lits = line.split()
-        final = False
         for lit in lits:
             numlit = int(lit)
             if numlit == 0:
@@ -399,6 +403,17 @@ class solution_parser:
             if solution[abs(numlit)] ^ (numlit < 0):
                 return True
 
+        # print not set vars
+        print("Unset vars:")
+        for lit in lits:
+            numlit = int(lit)
+            if numlit == 0:
+                break
+
+            if abs(numlit) not in solution:
+                print("var %d not set" % abs(numlit))
+
+        print("Every other var set to FALSE")
         raise NameError("Error: clause '%s' not satisfied." % line)
 
     @staticmethod

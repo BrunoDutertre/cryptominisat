@@ -1,6 +1,42 @@
+# Copyright (c) 2017, Mate Soos
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 include_directories(
     ${PROJECT_SOURCE_DIR}
 )
+
+if (NOT WIN32)
+    add_cxx_flag_if_supported("-Wno-bitfield-constant-conversion")
+    #add_cxx_flag_if_supported("-Wduplicated-cond")
+    #add_cxx_flag_if_supported("-Wduplicated-branches")
+    add_cxx_flag_if_supported("-Wlogical-op")
+    add_cxx_flag_if_supported("-Wrestrict")
+    add_cxx_flag_if_supported("-Wnull-dereference")
+    add_cxx_flag_if_supported("-Wjump-misses-init")
+    add_cxx_flag_if_supported("-Wdouble-promotion")
+    add_cxx_flag_if_supported("-Wshadow")
+    add_cxx_flag_if_supported("-Wformat=2")
+    add_cxx_flag_if_supported("-Wextra-semi")
+    add_cxx_flag_if_supported("-pedantic")
+    #add_cxx_flag_if_supported("-Wdeprecated")
+endif()
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
@@ -13,14 +49,19 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cryptominisat.h.in" "${CMAKE_CURRENT
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/solvertypesmini.h.in" "${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/solvertypesmini.h" @ONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cryptominisat_c.h.in" "${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat_c.h" @ONLY)
 
-add_custom_command(
-    OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/sql_tablestructure.cpp
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMAND xxd -i cmsat_tablestructure.sql ${CMAKE_CURRENT_BINARY_DIR}/sql_tablestructure.cpp
-    DEPENDS ${CMAKE_SOURCE_DIR}/cmsat_tablestructure.sql
-)
+if (SQLITE3_FOUND AND STATS)
+    if (NOT PYTHON_EXECUTABLE)
+        MESSAGE(FATAL_ERROR "Unfortunately, the python interpreter is needed for statistics because of SQL text generation")
+    endif()
 
-add_custom_target(tablestruct ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_tablestructure.cpp)
+    add_custom_command(
+        OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/sql_tablestructure.cpp
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMAND ${PYTHON_EXECUTABLE} ${CRYPTOMS_SCRIPTS_DIR}/xxd-alike.py cmsat_tablestructure.sql ${CMAKE_CURRENT_BINARY_DIR}/sql_tablestructure.cpp
+        DEPENDS ${CMAKE_SOURCE_DIR}/cmsat_tablestructure.sql
+    )
+    add_custom_target(tablestruct ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_tablestructure.cpp)
+endif()
 
 set(cryptoms_lib_files
     cnf.cpp
@@ -48,7 +89,6 @@ set(cryptoms_lib_files
     comphandler.cpp
     hyperengine.cpp
     subsumeimplicit.cpp
-    cleaningstats.cpp
     datasync.cpp
     reducedb.cpp
     clausedumper.cpp
@@ -88,10 +128,6 @@ if (SQLITE3_FOUND AND STATS)
     SET(cryptoms_lib_link_libs ${cryptoms_lib_link_libs} ${SQLITE3_LIBRARIES})
 endif ()
 
-if (TBB_FOUND)
-    set(cryptoms_lib_link_libs  ${cryptoms_lib_link_libs} ${TBB_MALLOC_LIBRARY_NAMES})
-endif()
-
 if (NOT STATICCOMPILE)
     add_library(libcryptominisat5 SHARED
         ${cryptoms_lib_files}
@@ -110,16 +146,16 @@ GENERATE_EXPORT_HEADER(libcryptominisat5
          #STATIC_DEFINE MyLibrary_BUILT_AS_STATIC
 )
 
-add_dependencies(libcryptominisat5
-    tablestruct
-    ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat_c.h
-    ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat.h
-    ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/solvertypesmini.h
-    ${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp
-)
+if (SQLITE3_FOUND AND STATS)
+    add_dependencies(libcryptominisat5
+        tablestruct
+    )
+endif()
 
+# indicate that we depend on pthread, and compile in the actual library
 target_link_libraries(libcryptominisat5
     LINK_PUBLIC ${cryptoms_lib_link_libs}
+    LINK_PUBLIC ${CMAKE_THREAD_LIBS_INIT}
 )
 
 if (NOT WIN32)
@@ -141,17 +177,15 @@ endif()
 if (IPASIR)
     if (NOT STATICCOMPILE)
         add_library(ipasircryptominisat5 SHARED
-            ${cryptoms_lib_files}
             ipasir.cpp
         )
     else()
         add_library(ipasircryptominisat5 STATIC
-            ${cryptoms_lib_files}
             ipasir.cpp
         )
     endif()
     target_link_libraries(ipasircryptominisat5
-        LINK_PUBLIC ${cryptoms_lib_link_libs}
+        LINK_PUBLIC ${cryptoms_lib_link_libs} libcryptominisat5
     )
     set_target_properties(ipasircryptominisat5 PROPERTIES
         OUTPUT_NAME ipasircryptominisat5
@@ -159,6 +193,13 @@ if (IPASIR)
         VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
         SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     )
+    install(TARGETS ipasircryptominisat5
+        EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
+        LIBRARY DESTINATION "${CMAKE_INSTALL_PREFIX}/${LIBDIR}"
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_PREFIX}/${LIBDIR}"
+        PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_PREFIX}/${INCLUDEDIR}/cryptominisat5"
+    )
+
 endif()
 
 cmsat_add_public_header(libcryptominisat5 ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat_c.h )
@@ -222,39 +263,35 @@ IF (ZLIB_FOUND)
     SET(cryptoms_exec_link_libs ${cryptoms_exec_link_libs} ${ZLIB_LIBRARY})
 ENDIF()
 
-if (NOT ONLY_SIMPLE)
-    set_target_properties(cryptominisat5 PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
-        INSTALL_RPATH_USE_LINK_PATH TRUE)
-    if (STATICCOMPILE)
-      SET_TARGET_PROPERTIES(cryptominisat5 PROPERTIES LINK_SEARCH_END_STATIC 1)
-    endif()
-
-    if (USE_GAUSS)
-        set_target_properties(scalmc PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
-            INSTALL_RPATH_USE_LINK_PATH TRUE)
-    endif()
-
+if (STATICCOMPILE)
+    SET_TARGET_PROPERTIES(cryptominisat5_simple PROPERTIES LINK_SEARCH_START_STATIC 1)
 endif()
 set_target_properties(cryptominisat5_simple PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
     INSTALL_RPATH_USE_LINK_PATH TRUE)
 if (STATICCOMPILE)
     SET_TARGET_PROPERTIES(cryptominisat5_simple PROPERTIES LINK_SEARCH_END_STATIC 1)
- endif()
+endif()
+target_link_libraries(cryptominisat5_simple
+    ${cryptoms_exec_link_libs}
+)
+install(TARGETS cryptominisat5_simple
+    EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
+    RUNTIME DESTINATION ${BINDIR}
+)
+SET(CPACK_PACKAGE_EXECUTABLES "cryptominisat5_simple")
 
 if (NOT ONLY_SIMPLE)
-    target_link_libraries(cryptominisat5
-        ${cryptoms_exec_link_libs}
-    )
-    install(TARGETS cryptominisat5
-        EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
-        RUNTIME DESTINATION ${BINDIR}
-    )
-    SET(CPACK_PACKAGE_EXECUTABLES "cryptominisat5")
-
     if (USE_GAUSS)
+        if (STATICCOMPILE)
+            SET_TARGET_PROPERTIES(scalmc PROPERTIES LINK_SEARCH_START_STATIC 1)
+        endif()
+        set_target_properties(scalmc PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
+            INSTALL_RPATH_USE_LINK_PATH TRUE)
+        if (STATICCOMPILE)
+            SET_TARGET_PROPERTIES(scalmc PROPERTIES LINK_SEARCH_END_STATIC 1)
+        endif()
         target_link_libraries(scalmc
             ${cryptoms_exec_link_libs}
         )
@@ -264,16 +301,25 @@ if (NOT ONLY_SIMPLE)
         )
         SET(CPACK_PACKAGE_EXECUTABLES "scalmc")
     endif()
-endif()
 
-target_link_libraries(cryptominisat5_simple
-    ${cryptoms_exec_link_libs}
-)
-install(TARGETS cryptominisat5_simple
-    EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
-    RUNTIME DESTINATION ${BINDIR}
-)
-SET(CPACK_PACKAGE_EXECUTABLES "cryptominisat5_simple")
+    if (STATICCOMPILE)
+        SET_TARGET_PROPERTIES(cryptominisat5 PROPERTIES LINK_SEARCH_START_STATIC 1)
+    endif()
+    set_target_properties(cryptominisat5 PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
+        INSTALL_RPATH_USE_LINK_PATH TRUE)
+    if (STATICCOMPILE)
+        SET_TARGET_PROPERTIES(cryptominisat5 PROPERTIES LINK_SEARCH_END_STATIC 1)
+    endif()
+    target_link_libraries(cryptominisat5
+        ${cryptoms_exec_link_libs}
+    )
+    install(TARGETS cryptominisat5
+        EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
+        RUNTIME DESTINATION ${BINDIR}
+    )
+    SET(CPACK_PACKAGE_EXECUTABLES "cryptominisat5")
+endif()
 
 
 if (FEEDBACKFUZZ)

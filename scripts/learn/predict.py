@@ -1,31 +1,35 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+# Copyright (C) 2017  Mate Soos
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2
+# of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
 
 from __future__ import print_function
 import sqlite3
 import optparse
-import operator
-import numpy
 import time
-import functools
-import glob
-import os
-import copy
 import pickle
 import re
+import pandas as pd
 
-from sklearn.preprocessing import StandardScaler
-from sklearn.cross_validation import train_test_split
-import sklearn.linear_model
+from sklearn.model_selection import train_test_split
 import sklearn.tree
-import sklearn.svm
 import sklearn.ensemble
 import sklearn.metrics
-import math
-
-
-def mypow(to, base):
-    return base**to
 
 
 class QueryHelper:
@@ -33,14 +37,6 @@ class QueryHelper:
         self.conn = sqlite3.connect(dbfname)
         self.c = self.conn.cursor()
         self.runID = self.find_runID()
-        self.get_clausestats_names()
-        self.rststats_names = self.get_rststats_names()[5:]
-
-    def get_rststats_names(self):
-        names = None
-        for row in self.c.execute("select * from restart limit 1"):
-            names = list(map(lambda x: x[0], self.c.description))
-        return names
 
     def __enter__(self):
         return self
@@ -59,6 +55,9 @@ class QueryHelper:
 
         runID = None
         for row in self.c.execute(q):
+            if runID is not None:
+                print("ERROR: More than one RUN IDs in file!")
+                exit(-1)
             runID = int(row[0])
 
         print("runID: %d" % runID)
@@ -73,15 +72,17 @@ class Query2 (QueryHelper):
         drop index if exists `idxclid`;
         drop index if exists `idxclid2`;
         drop index if exists `idxclid3`;
+        drop index if exists `idxclid4`;
 
         create index `idxclid` on `clauseStats` (`runID`,`clauseID`);
-        create index `idxclid2` on `goodClauses` (`runID`,`clauseID`);
-        create index `idxclid3` on `restart` (`runID`,`clauseIDstartInclusive`, `clauseIDendExclusive`);
+        create index `idxclid2` on `clauseStats` (`runID`,`prev_restart`);
+        create index `idxclid3` on `goodClauses` (`runID`,`clauseID`);
+        create index `idxclid4` on `restart` (`runID`, `restarts`);
         """
         for l in q.split('\n'):
             self.c.execute(l)
 
-        print("indexes created %-3.2f" % (time.time()-t))
+        print("indexes created %-3.2f" % (time.time() - t))
 
     def get_max_clauseID(self):
         q = """
@@ -96,261 +97,263 @@ class Query2 (QueryHelper):
 
         return max_clID
 
-    def get_rststats(self):
-        q = """
-        select
-            numgood.cnt,
-            restart.clauseIDendExclusive-restart.clauseIDstartInclusive as total,
-            restart.*
-        from
-            restart,
-            (SELECT clauseStats.restarts as restarts, count(clauseStats.clauseID) as cnt
-            FROM ClauseStats, goodClauses
-            WHERE clauseStats.clauseID = goodClauses.clauseID
-            and clauseStats.runID = goodClauses.runID
-            and clauseStats.runID = {0}
-            group by clauseStats.restarts) as numgood
-        where
-            restart.runID = {0}
-            and restart.restarts = numgood.restarts
-        """.format(self.runID)
-
-        X = []
-        y = []
-        for row in self.c.execute(q):
-            r = list(row)
-            good = r[0]
-            total = r[1]
-            perc = float(good)/float(total)
-            r = self.transform_rst_row(r[2:])
-            X.append(r)
-            y.append(perc)
-
-        return X, y
-
     def get_clstats(self):
-        X = []
-        y = []
+        comment = ""
+        if not options.restart_used:
+            comment = "--"
 
+        # partially done with tablestruct_sql and SED: sed -e 's/`\(.*\)`.*/{comment} restart.`\1` as `rst.\1`,/' ../tmp.txt
         q = """
-        SELECT clauseStats.*
-        -- , restart.*
+        SELECT
+        clauseStats.`runID` as `cl.runID`,
+        clauseStats.`simplifications` as `cl.simplifications`,
+        clauseStats.`restarts` as `cl.restarts`,
+        clauseStats.`prev_restart` as `cl.prev_restart`,
+        clauseStats.`conflicts` as `cl.conflicts`,
+        clauseStats.`clauseID` as `cl.clauseID`,
+        clauseStats.`glue` as `cl.glue`,
+        clauseStats.`size` as `cl.size`,
+        clauseStats.`conflicts_this_restart` as `cl.conflicts_this_restart`,
+        clauseStats.`num_overlap_literals` as `cl.num_overlap_literals`,
+        clauseStats.`num_antecedents` as `cl.num_antecedents`,
+        clauseStats.`antecedents_avg_size` as `cl.antecedents_avg_size`,
+        clauseStats.`backtrack_level` as `cl.backtrack_level`,
+        clauseStats.`decision_level` as `cl.decision_level`,
+        clauseStats.`trail_depth_level` as `cl.trail_depth_level`,
+        clauseStats.`atedecents_binIrred` as `cl.atedecents_binIrred`,
+        clauseStats.`atedecents_binRed` as `cl.atedecents_binRed`,
+        clauseStats.`atedecents_longIrred` as `cl.atedecents_longIrred`,
+        clauseStats.`atedecents_longRed` as `cl.atedecents_longRed`,
+        clauseStats.`vsids_vars_avg` as `cl.vsids_vars_avg`,
+        clauseStats.`vsids_vars_var` as `cl.vsids_vars_var`,
+        clauseStats.`vsids_vars_min` as `cl.vsids_vars_min`,
+        clauseStats.`vsids_vars_max` as `cl.vsids_vars_max`,
+        clauseStats.`antecedents_glue_long_reds_avg` as `cl.antecedents_glue_long_reds_avg`,
+        clauseStats.`antecedents_glue_long_reds_var` as `cl.antecedents_glue_long_reds_var`,
+        clauseStats.`antecedents_glue_long_reds_min` as `cl.antecedents_glue_long_reds_min`,
+        clauseStats.`antecedents_glue_long_reds_max` as `cl.antecedents_glue_long_reds_max`,
+        clauseStats.`antecedents_long_red_age_avg` as `cl.antecedents_long_red_age_avg`,
+        clauseStats.`antecedents_long_red_age_var` as `cl.antecedents_long_red_age_var`,
+        clauseStats.`antecedents_long_red_age_min` as `cl.antecedents_long_red_age_min`,
+        clauseStats.`antecedents_long_red_age_max` as `cl.antecedents_long_red_age_max`,
+        clauseStats.`vsids_of_resolving_literals_var` as `cl.vsids_of_resolving_literals_var`,
+        clauseStats.`vsids_of_resolving_literals_min` as `cl.vsids_of_resolving_literals_min`,
+        clauseStats.`vsids_of_resolving_literals_max` as `cl.vsids_of_resolving_literals_max`,
+        clauseStats.`vsids_of_all_incoming_lits_var` as `cl.vsids_of_all_incoming_lits_var`,
+        clauseStats.`vsids_of_all_incoming_lits_min` as `cl.vsids_of_all_incoming_lits_min`,
+        clauseStats.`vsids_of_all_incoming_lits_max` as `cl.vsids_of_all_incoming_lits_max`,
+        clauseStats.`antecedents_antecedents_vsids_avg` as `cl.antecedents_antecedents_vsids_avg`,
+        clauseStats.`decision_level_hist` as `cl.decision_level_hist`,
+        clauseStats.`backtrack_level_hist` as `cl.backtrack_level_hist`,
+        clauseStats.`trail_depth_level_hist` as `cl.trail_depth_level_hist`,
+        clauseStats.`vsids_vars_hist` as `cl.vsids_vars_hist`,
+        clauseStats.`size_hist` as `cl.size_hist`,
+        clauseStats.`glue_hist` as `cl.glue_hist`,
+        clauseStats.`num_antecedents_hist` as `cl.num_antecedents_hist`,
+
+        1 as good,
+
+        {comment} restart.`runID` as `rst.runID`,
+        {comment} restart.`simplifications` as `rst.simplifications`,
+        {comment} restart.`restarts` as `rst.restarts`,
+        {comment} restart.`conflicts` as `rst.conflicts`,
+        {comment} restart.`runtime` as `rst.runtime`,
+        {comment} restart.`numIrredBins` as `rst.numIrredBins`,
+        {comment} restart.`numIrredLongs` as `rst.numIrredLongs`,
+        {comment} restart.`numRedBins` as `rst.numRedBins`,
+        {comment} restart.`numRedLongs` as `rst.numRedLongs`,
+        {comment} restart.`numIrredLits` as `rst.numIrredLits`,
+        {comment} restart.`numredLits` as `rst.numredLits`,
+        {comment} restart.`glue` as `rst.glue`,
+        {comment} restart.`glueSD` as `rst.glueSD`,
+        {comment} restart.`glueMin` as `rst.glueMin`,
+        {comment} restart.`glueMax` as `rst.glueMax`,
+        {comment} restart.`size` as `rst.size`,
+        {comment} restart.`sizeSD` as `rst.sizeSD`,
+        {comment} restart.`sizeMin` as `rst.sizeMin`,
+        {comment} restart.`sizeMax` as `rst.sizeMax`,
+        {comment} restart.`resolutions` as `rst.resolutions`,
+        {comment} restart.`resolutionsSD` as `rst.resolutionsSD`,
+        {comment} restart.`resolutionsMin` as `rst.resolutionsMin`,
+        {comment} restart.`resolutionsMax` as `rst.resolutionsMax`,
+        {comment} restart.`branchDepth` as `rst.branchDepth`,
+        {comment} restart.`branchDepthSD` as `rst.branchDepthSD`,
+        {comment} restart.`branchDepthMin` as `rst.branchDepthMin`,
+        {comment} restart.`branchDepthMax` as `rst.branchDepthMax`,
+        {comment} restart.`branchDepthDelta` as `rst.branchDepthDelta`,
+        {comment} restart.`branchDepthDeltaSD` as `rst.branchDepthDeltaSD`,
+        {comment} restart.`branchDepthDeltaMin` as `rst.branchDepthDeltaMin`,
+        {comment} restart.`branchDepthDeltaMax` as `rst.branchDepthDeltaMax`,
+        {comment} restart.`trailDepth` as `rst.trailDepth`,
+        {comment} restart.`trailDepthSD` as `rst.trailDepthSD`,
+        {comment} restart.`trailDepthMin` as `rst.trailDepthMin`,
+        {comment} restart.`trailDepthMax` as `rst.trailDepthMax`,
+        {comment} restart.`trailDepthDelta` as `rst.trailDepthDelta`,
+        {comment} restart.`trailDepthDeltaSD` as `rst.trailDepthDeltaSD`,
+        {comment} restart.`trailDepthDeltaMin` as `rst.trailDepthDeltaMin`,
+        {comment} restart.`trailDepthDeltaMax` as `rst.trailDepthDeltaMax`,
+        {comment} restart.`propBinIrred` as `rst.propBinIrred`,
+        {comment} restart.`propBinRed` as `rst.propBinRed`,
+        {comment} restart.`propLongIrred` as `rst.propLongIrred`,
+        {comment} restart.`propLongRed` as `rst.propLongRed`,
+        {comment} restart.`conflBinIrred` as `rst.conflBinIrred`,
+        {comment} restart.`conflBinRed` as `rst.conflBinRed`,
+        {comment} restart.`conflLongIrred` as `rst.conflLongIrred`,
+        {comment} restart.`conflLongRed` as `rst.conflLongRed`,
+        {comment} restart.`learntUnits` as `rst.learntUnits`,
+        {comment} restart.`learntBins` as `rst.learntBins`,
+        {comment} restart.`learntLongs` as `rst.learntLongs`,
+        {comment} restart.`resolBinIrred` as `rst.resolBinIrred`,
+        {comment} restart.`resolBinRed` as `rst.resolBinRed`,
+        {comment} restart.`resolLIrred` as `rst.resolLIrred`,
+        {comment} restart.`resolLRed` as `rst.resolLRed`,
+        {comment} restart.`propagations` as `rst.propagations`,
+        {comment} restart.`decisions` as `rst.decisions`,
+        {comment} restart.`flipped` as `rst.flipped`,
+        {comment} restart.`varSetPos` as `rst.varSetPos`,
+        {comment} restart.`varSetNeg` as `rst.varSetNeg`,
+        {comment} restart.`free` as `rst.free`,
+        {comment} restart.`replaced` as `rst.replaced`,
+        {comment} restart.`eliminated` as `rst.eliminated`,
+        {comment} restart.`set` as `rst.set`,
+        {comment} restart.`clauseIDstartInclusive` as `rst.clauseIDstartInclusive`,
+        {comment} restart.`clauseIDendExclusive` as `rst.clauseIDendExclusive`
+
         FROM clauseStats, goodClauses
-        -- , restart
+        {comment} , restart
         WHERE
 
         clauseStats.clauseID = goodClauses.clauseID
         and clauseStats.runID = goodClauses.runID
         and clauseStats.restarts > 1 -- to avoid history being invalid
-
-        -- and restart.clauseIDstartInclusive <= clauseStats.clauseID
-        -- and restart.clauseIDendExclusive > clauseStats.clauseID
-
         and clauseStats.runID = {0}
-        order by RANDOM()
+        {comment} and restart.restarts = clauseStats.prev_restart
+        {comment} and restart.runID = {0}
+
         limit {1}
-        """.format(self.runID, options.limit)
-        for row in self.c.execute(q):
-            r = self.transform_clstat_row(row)
-            X.append(r)
-            y.append(1)  # GOOD clause
+        """.format(self.runID, options.limit, comment=comment)
+
+        df = pd.read_sql_query(q, self.conn)
 
         # BAD caluses
         q = """
-        SELECT clauseStats.*
-        -- , restart.*
+        SELECT clauseStats.*, 0 as good
+        {comment} , restart.*
         FROM clauseStats left join goodClauses
         on clauseStats.clauseID = goodClauses.clauseID
         and clauseStats.runID = goodClauses.runID
-        -- , restart
+        {comment} , restart
         where
 
         goodClauses.clauseID is NULL
         and goodClauses.runID is NULL
         and clauseStats.restarts > 1 -- to avoid history being invalid
-
-        -- and restart.clauseIDstartInclusive <= clauseStats.clauseID
-        -- and restart.clauseIDendExclusive > clauseStats.clauseID
-
         and clauseStats.runID = {0}
-        order by RANDOM()
+        {comment} and restart.restarts = clauseStats.prev_restart
+        {comment} and restart.runID = {0}
+
         limit {1}
-        """.format(self.runID, options.limit)
-        for row in self.c.execute(q):
-            r = self.transform_clstat_row(row)
-            X.append(r)
-            y.append(0)  # BAD clause
+        """.format(self.runID, options.limit, comment=comment)
+        df2 = pd.read_sql_query(q, self.conn)
 
-        return X, y
-
-    def transform_rst_row(self, row):
-        row = self.reset_some_to_null(row)
-
-        ret = []
-        if options.add_pow2:
-            for x in row:
-                ret.extend([x, x*x])
-
-            return ret
-        else:
-            return row
-
-    def get_clausestats_names(self):
-        q = """
-        select clauseStats.*
-        from clauseStats
-        limit 1
-        """
-        names = None
-        for row in self.c.execute(q):
-            names = list(map(lambda x: "clauseStats." + x[0], self.c.description))
-
-        q = """
-        select restart.*
-        from restart
-        limit 1
-        """
-        for row in self.c.execute(q):
-            names.extend(list(map(lambda x: "restart." + x[0], self.c.description)))
-
-        print(names)
-
-        if options.add_pow2:
-            orignames = copy.deepcopy(names)
-            for name in orignames:
-                names.append("%s**2" % name)
-
-        self.clstats_names = names
-        self.ntoc = {}
-        for n, c in zip(names, xrange(10000)):
-            self.ntoc[n] = c
-
-    def reset_some_to_null(self, row):
-        set_to_null = [
-            "clauseStats.runID",
-            "clauseStats.simplifications",
-            "clauseStats.restarts",
-            "clauseStats.conflicts",
-            "clauseStats.clauseID",
-            "clauseStats.conflicts_this_restart"]
-
-        # set these too in case restarts are added
-        # "restart.runID",
-        # "restart.simplifications",
-        # "restart.restarts",
-        # "restart.conflicts",
-        # "restart.runtime",
-        # "restart.clauseIDstartInclusive",
-        # "restart.clauseIDendExclusive"]
-
-        row2 = list(row)
-        for e in set_to_null:
-            row_to_reset = self.ntoc[e]
-            row2[row_to_reset] = 0
-
-        return row2
-
-    def transform_clstat_row(self, row):
-        row = self.reset_some_to_null(row)
-
-        if row[self.ntoc["clauseStats.decision_level_hist"]] == 0 or \
-            row[self.ntoc["clauseStats.backtrack_level_hist"]] == 0 or \
-            row[self.ntoc["clauseStats.trail_depth_level_hist"]] == 0 or \
-            row[self.ntoc["clauseStats.vsids_vars_hist"]] == 0 or \
-            row[self.ntoc["clauseStats.size_hist"]] == 0 or \
-            row[self.ntoc["clauseStats.glue_hist"]] == 0 or \
-            row[self.ntoc["clauseStats.num_antecedents_hist"]] == 0:
-                print("ERROR: Data is in error:", row)
-                exit(-1)
-
-        row[self.ntoc["clauseStats.decision_level"]]   /= row[self.ntoc["clauseStats.decision_level_hist"]]
-        row[self.ntoc["clauseStats.backtrack_level"]]  /= row[self.ntoc["clauseStats.backtrack_level_hist"]]
-        row[self.ntoc["clauseStats.trail_depth_level"]]/= row[self.ntoc["clauseStats.trail_depth_level_hist"]]
-        row[self.ntoc["clauseStats.vsids_vars_avg"]]   /= row[self.ntoc["clauseStats.vsids_vars_hist"]]
-        #row[self.ntoc["clauseStats.size"]]             /= row[self.ntoc["clauseStats.size_hist"]]
-        #row[self.ntoc["clauseStats.glue"]]             /= row[self.ntoc["clauseStats.glue_hist"]]
-        #row[self.ntoc["clauseStats.num_antecedents"]]  /= row[self.ntoc["clauseStats.num_antecedents_hist"]]
-
-        row[self.ntoc["clauseStats.decision_level_hist"]] = 0
-        row[self.ntoc["clauseStats.backtrack_level_hist"]] = 0
-        row[self.ntoc["clauseStats.trail_depth_level_hist"]] = 0
-        row[self.ntoc["clauseStats.vsids_vars_hist"]] = 0
-        #row[self.ntoc["clauseStats.size_hist"]] = 0
-        #row[self.ntoc["clauseStats.glue_hist"]] = 0
-        #row[self.ntoc["clauseStats.num_antecedents_hist"]] = 0
-
-        return row
-
-
-class Data:
-    def __init__(self, X, y, colnames):
-        self.X = numpy.array(X)
-        self.y = numpy.array(y)
-        self.colnames = colnames
-
-    def add(self, other):
-        self.X = numpy.append(self.X, other.X, 0)
-        self.y = numpy.append(self.y, other.y, 0)
-        if len(self.colnames) == 0:
-            self.colnames = other.colnames
-        else:
-            assert self.colnames == other.colnames
+        return pd.concat([df, df2])
 
 
 def get_one_file(dbfname):
     print("Using sqlite3db file %s" % dbfname)
-    clstats_names = None
 
+    df = None
     with Query2(dbfname) as q:
-        q.create_indexes()
-        clstats_names = q.clstats_names
-        X, y = q.get_clstats()
-        assert len(X) == len(y)
+        if not options.no_recreate_indexes:
+            q.create_indexes()
+        df = q.get_clstats()
+        print(df.head())
 
-    cl_data = Data(X, y, clstats_names)
-
-    return cl_data
+    return df
 
 
 class Classify:
-    def learn(self, X, y, classifiername="classifier"):
-        print("number of features:", len(X[0]))
+    def __init__(self, df):
+        self.features = df.columns.values.flatten().tolist()
 
-        print("total samples: %5d   percentage of good ones %-3.2f" %
-              (len(X), sum(y)/float(len(X))*100.0))
-        #X = StandardScaler().fit_transform(X)
+        toremove = ["decision_level_hist",
+                    "backtrack_level_hist",
+                    "trail_depth_level_hist",
+                    "vsids_vars_hist",
+                    "runID",
+                    "simplifications",
+                    "restarts",
+                    "conflicts",
+                    "clauseID",
+                    "size_hist",
+                    "glue_hist",
+                    "num_antecedents_hist",
+                    "decision_level",
+                    "backtrack_level",
+                    "good"]
+
+        if True:
+            toremove.extend(["vsids_vars_avg",
+                             "vsids_vars_var",
+                             "vsids_vars_min",
+                             "vsids_vars_max",
+                             "vsids_of_resolving_literals_avg",
+                             "vsids_of_resolving_literals_var",
+                             "vsids_of_resolving_literals_min",
+                             "vsids_of_resolving_literals_max",
+                             "vsids_of_all_incoming_lits_avg",
+                             "vsids_of_all_incoming_lits_var",
+                             "vsids_of_all_incoming_lits_min",
+                             "vsids_of_all_incoming_lits_max"])
+
+        if options.restart_used:
+            toremove.extend([
+                "restart.runID",
+                "restart.simplifications",
+                "restart.restarts",
+                "restart.conflicts",
+                "restart.runtime",
+                "restart.clauseIDstartInclusive",
+                "restart.clauseIDendExclusive"])
+
+        for t in toremove:
+            print("removing feature:", t)
+            self.features.remove(t)
+        print("features:", self.features)
+
+    def learn(self, df, cleanname, classifiername="classifier"):
+
+        print("total samples: %5d   percentage of good ones %-3.4f" %
+              (df.shape[0],
+               sum(df["good"]) / float(df.shape[0]) * 100.0))
 
         print("Training....")
         t = time.time()
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        # clf = KNeighborsClassifier(5) # EXPENSIVE at prediction, NOT suitable
+        # self.clf = sklearn.linear_model.LogisticRegression() # NOT good.
+        self.clf = sklearn.tree.DecisionTreeClassifier(
+            random_state=90, max_depth=5)
+        # self.clf = sklearn.ensemble.RandomForestClassifier(min_samples_split=len(X)/20, n_estimators=6)
+        # self.clf = sklearn.svm.SVC(max_iter=1000) # can't make it work too well..
+        train, test = train_test_split(df, test_size=0.2, random_state=90)
+        self.clf.fit(train[self.features], train["good"])
 
-        #clf = KNeighborsClassifier(5) # EXPENSIVE at prediction, NOT suitable
-        #self.clf = sklearn.linear_model.LogisticRegression() # NOT good.
-        self.clf = sklearn.tree.DecisionTreeClassifier(max_depth=5)
-        #self.clf = sklearn.ensemble.RandomForestClassifier(min_samples_split=len(X)/20, n_estimators=6)
-        #self.clf = sklearn.svm.SVC(max_iter=1000) # can't make it work too well..
-        self.clf.fit(X_train, y_train)
-        print("Training finished. T: %-3.2f" % (time.time()-t))
+        print("Training finished. T: %-3.2f" % (time.time() - t))
 
         print("Calculating scores....")
-
         t = time.time()
-        y_pred = self.clf.predict(X_test)
-        recall = sklearn.metrics.recall_score(y_test, y_pred)
-        prec = sklearn.metrics.precision_score(y_test, y_pred)
-        # avg_prec = self.clf.score(X, y)
-        print("prec: %-3.3f  recall: %-3.3f T: %-3.2f" %
-              (prec, recall, (time.time()-t)))
+        y_pred = self.clf.predict(test[self.features])
+        recall = sklearn.metrics.recall_score(test["good"], y_pred)
+        prec = sklearn.metrics.precision_score(test["good"], y_pred)
+        print("prec: %-3.4f  recall: %-3.4f T: %-3.2f" %
+              (prec, recall, (time.time() - t)))
 
-        with open(classifiername, "w") as f:
+        with open(classifiername, "wb") as f:
             pickle.dump(self.clf, f)
 
-    def output_to_dot(self, clstats_names, fname):
-        print("clstats_names len:", len(clstats_names))
-        print("clstats_names: %s" % clstats_names)
-
+    def output_to_dot(self, fname):
         sklearn.tree.export_graphviz(self.clf, out_file=fname,
-                                     feature_names=clstats_names,
+                                     feature_names=self.features,
                                      class_names=["BAD", "GOOD"],
                                      filled=True, rounded=True,
                                      special_characters=True,
@@ -362,12 +365,12 @@ class Classify:
 
 class Check:
     def __init__(self, classf_fname):
-        with open(classf_fname, "r") as f:
+        with open(classf_fname, "rb") as f:
             self.clf = pickle.load(f)
 
     def check(self, X, y):
         print("total samples: %5d   percentage of good ones %-3.2f" %
-              (len(X), sum(y)/float(len(X))*100.0))
+              (len(X), sum(y) / float(len(X)) * 100.0))
 
         t = time.time()
         y_pred = self.clf.predict(X)
@@ -375,7 +378,75 @@ class Check:
         prec = sklearn.metrics.precision_score(y, y_pred)
         # avg_prec = self.clf.score(X, y)
         print("prec: %-3.3f  recall: %-3.3f T: %-3.2f" %
-              (prec, recall, (time.time()-t)))
+              (prec, recall, (time.time() - t)))
+
+
+def transform(df):
+    def check_clstat_row(self, row):
+        if row[self.ntoc["cl.decision_level_hist"]] == 0 or \
+                row[self.ntoc["cl.backtrack_level_hist"]] == 0 or \
+                row[self.ntoc["cl.trail_depth_level_hist"]] == 0 or \
+                row[self.ntoc["cl.vsids_vars_hist"]] == 0 or \
+                row[self.ntoc["cl.size_hist"]] == 0 or \
+                row[self.ntoc["cl.glue_hist"]] == 0 or \
+                row[self.ntoc["cl.num_antecedents_hist"]] == 0:
+            print("ERROR: Data is in error:", row)
+            assert(False)
+            exit(-1)
+
+        return row
+
+    df["cl.size_rel"] = df["cl.size"] / df["cl.size_hist"]
+    df["cl.glue_rel"] = df["cl.glue"] / df["cl.glue_hist"]
+    df["cl.num_antecedents_rel"] = df["cl.num_antecedents"] / \
+        df["cl.num_antecedents_hist"]
+    df["cl.decision_level_rel"] = df["cl.decision_level"] / df["cl.decision_level_hist"]
+    df["cl.backtrack_level_rel"] = df["cl.backtrack_level"] / \
+        df["cl.backtrack_level_hist"]
+    df["cl.trail_depth_level_rel"] = df["cl.trail_depth_level"] / \
+        df["cl.trail_depth_level_hist"]
+    df["cl.vsids_vars_rel"] = df["cl.vsids_vars_avg"] / df["cl.vsids_vars_hist"]
+    old = set(df.columns.values.flatten().tolist())
+    df = df.dropna(how="all")
+    new = set(df.columns.values.flatten().tolist())
+    if len(old - new) > 0:
+        print("ERROR: a NaN number turned up")
+        print("columns: ", (old - new))
+        assert(False)
+        exit(-1)
+
+    return df
+
+
+def one_predictor(dbfname, final_df):
+    t = time.time()
+    df = get_one_file(dbfname)
+    cleanname = re.sub('\.cnf.gz.sqlite$', '', dbfname)
+    print("Read in data in %-5.2f secs" % (time.time() - t))
+
+    print(df.describe())
+    df = transform(df)
+    print(df.describe())
+    if final_df is None:
+        final_df = df
+    else:
+        final_df = final_df.concat([df, final_df])
+
+    # display
+    pd.options.display.mpl_style = "default"
+    with open("pandasdata.dat", "wb") as f:
+        pickle.dump(df, f)
+    # df.hist()
+    # df.boxplot()
+
+    if options.check:
+        check = Check(options.check)
+        check.check(cl.X, cl.y)
+    else:
+        clf = Classify(df)
+        clf.learn(df, "%s.classifier" % cleanname)
+        clf.output_to_dot("%s.tree.dot" % cleanname)
+
 
 if __name__ == "__main__":
 
@@ -397,39 +468,22 @@ if __name__ == "__main__":
     parser.add_option("--data", "-d", action="store_true", default=False,
                       dest="data", help="Just get the dumped data")
 
+    parser.add_option("--restart", "-r", action="store_true", default=False,
+                      dest="restart_used", help="Help use restart stat about clause")
+
+    parser.add_option("--noind", action="store_true", default=False,
+                      dest="no_recreate_indexes", help="Don't recreate indexes")
+
     (options, args) = parser.parse_args()
 
     if len(args) < 1:
         print("ERROR: You must give at least one directory")
         exit(-1)
 
-    cl_data = None
+    final_df = None
     for dbfname in args:
         print("----- INTERMEDIATE predictor -------\n")
-        t = time.time()
-        if options.data:
-            with open(dbfname, "r") as f:
-                cl = pickle.load(f)
-        else:
-            cl = get_one_file(dbfname)
-        print("Read in data in %-5.2f secs" % (time.time()-t))
-
-        cleanname = re.sub('\.cnf.gz.sqlite$', '', dbfname)
-
-        if options.check:
-            check = Check(options.check)
-            check.check(cl.X, cl.y)
-        else:
-            clf = Classify()
-            clf.learn(cl.X, cl.y, "%s.classifier" % cleanname)
-            clf.output_to_dot(cl.colnames, "%s.tree.dot" % cleanname)
-            if cl_data is None:
-                cl_data = cl
-            else:
-                cl_data.add(cl)
-
-            with open("%s.cldata" % cleanname, "w") as f:
-                pickle.dump(cl, f)
+        one_predictor(dbfname, final_df)
 
     # intermediate predictor is final
     if len(args) == 1:
@@ -444,12 +498,6 @@ if __name__ == "__main__":
         check = Check()
         check.check(cl.X, cl.y)
     else:
-        clf = Classify()
-        clf.learn(cl_data.X, cl_data.y)
-        print("Columns used were:")
-        for i, name in zip(xrange(100), cl_data.colnames):
-            print("%-3d  %s" % (i, name))
-        clf.output_to_dot(cl_data.colnames, "final.dot")
-
-        with open("final.cldata", "w") as f:
-            pickle.dump(cl_data, f)
+        clf = Classify(final_df)
+        clf.learn(final_df, "final.classifier")
+        clf.output_to_dot("final.dot")

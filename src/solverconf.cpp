@@ -36,21 +36,21 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , polarity_mode(PolarityMode::polarmode_automatic)
 
         //Clause cleaning
-        , every_lev1_reduce(10000)
-        , every_lev2_reduce(15000)
+        , every_lev1_reduce(10000) // kept for a while then moved to lev2
+        , every_lev2_reduce(15000) // cleared regularly
         , must_touch_lev1_within(30000)
-
-        , max_temp_lev2_learnt_clauses(30000)
-        , inc_max_temp_lev2_red_cls(1.0)
-
+        , max_temp_lev2_learnt_clauses(30000) //only used if every_lev2_reduce==0
+        , inc_max_temp_lev2_red_cls(1.0)      //only used if every_lev2_reduce==0
         , protect_cl_if_improved_glue_below_this_glue_for_one_turn(30)
+        , glue_put_lev0_if_below_or_eq(3) // never removed
+        , glue_put_lev1_if_below_or_eq(5) // kept for a while then moved to lev2
+
+
         , clause_decay(0.999)
         , min_time_in_db_before_eligible_for_cleaning(5ULL*1000ULL)
-        , glue_put_lev0_if_below_or_eq(3)
-        , glue_put_lev1_if_below_or_eq(6)
         , adjust_glue_if_too_many_low(0.7)
         , min_num_confl_adjust_glue_cutoff(150ULL*1000ULL)
-        , guess_cl_effectiveness(1)
+        , guess_cl_effectiveness(0)
 
         //Restarting
         , restart_first(100)
@@ -60,8 +60,8 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , do_blocking_restart(1)
         , blocking_restart_trail_hist_length(5000)
         , blocking_restart_multip(1.4)
-        , maple(true)
-        , local_glue_multiplier(0.80)
+        , maple(false)
+        , local_glue_multiplier(0.70)
         , shortTermHistorySize (50)
         , lower_bound_for_blocking_restart(10000)
         , more_otf_shrink_with_cache(false)
@@ -82,6 +82,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , doPrintGateDot   (false)
         , doPrintConflDot  (false)
         , print_full_restart_stat   (false)
+        , print_all_restarts (false)
         , verbStats        (0)
         , do_print_times(1)
         , print_restart_line_every_n_confl(7000)
@@ -268,7 +269,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , saved_state_file("savedstate.dat")
 {
     ratio_keep_clauses[clean_to_int(ClauseClean::glue)] = 0;
-    ratio_keep_clauses[clean_to_int(ClauseClean::activity)] = 0.5;
+    ratio_keep_clauses[clean_to_int(ClauseClean::activity)] = 0.3;
 }
 
 

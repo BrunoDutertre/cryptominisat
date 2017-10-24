@@ -1,4 +1,27 @@
-cmake_minimum_required(VERSION 2.8.8 FATAL_ERROR)
+# Copyright (c) 2017, Mate Soos
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_CXX_STANDARD 11)
+
 include (GenerateExportHeader)
 if (NOT WIN32)
     include (GNUInstallDirs)
@@ -14,28 +37,26 @@ endif()
 message(STATUS "LIB directory is '${LIBDIR}'")
 message(STATUS "BIN directory is '${BINDIR}'")
 
-if(NOT (CMAKE_MAJOR_VERSION LESS 2))
-    if(POLICY CMP0022)
-        cmake_policy(SET CMP0022 OLD)
-    endif()
-
-    if(POLICY CMP0048)
-        cmake_policy(SET CMP0048 OLD)
-    endif()
-
-    if(POLICY CMP0046)
-        cmake_policy(SET CMP0046 OLD)
-    endif()
-
-    if(POLICY CMP0026)
-        cmake_policy(SET CMP0026 OLD)
-    endif()
-
-    if(POLICY CMP0048)
-        #policy for VERSION in cmake 3.0
-        cmake_policy(SET CMP0048 OLD)
-    endif()
+if(POLICY CMP0022)
+    cmake_policy(SET CMP0022 NEW)
 endif()
+
+if(POLICY CMP0048)
+    cmake_policy(SET CMP0048 OLD)
+endif()
+
+if(POLICY CMP0046)
+    cmake_policy(SET CMP0046 NEW)
+endif()
+
+if(POLICY CMP0026)
+    cmake_policy(SET CMP0026 NEW)
+endif()
+
+# -----------------------------------------------------------------------------
+# Provide scripts dir for included cmakes to use
+# -----------------------------------------------------------------------------
+set(CRYPTOMS_SCRIPTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
 
 # -----------------------------------------------------------------------------
 # Make RelWithDebInfo the default build type if otherwise not set
@@ -66,8 +87,7 @@ foreach (build_config ${build_types})
         string(REGEX REPLACE "(^| )[/-]D *NDEBUG($| )"
                              " "
                              replacement
-                             "${${VAR_TO_MODIFY}}"
-              )
+                             "${${VAR_TO_MODIFY}}")
         #message("Original (${VAR_TO_MODIFY}) is ${${VAR_TO_MODIFY}} replacement is ${replacement}")
         set(${VAR_TO_MODIFY} "${replacement}" CACHE STRING "Default flags for ${build_config} configuration" FORCE)
     endforeach()
@@ -75,50 +95,54 @@ endforeach()
 
 PROJECT(cryptominisat5)
 
-SET(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake) #m4-extra contains some library search cmake stuff
+# contains some library search cmake scripts
+SET(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
-macro(add_cxx_flag flagname)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}")
-endmacro()
+# generate JSON file of compile commands -- useful for code extension
+set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
+
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package (Threads REQUIRED)
 
 option(FEEDBACKFUZZ "Use Clang coverage sanitizers" OFF)
 if (FEEDBACKFUZZ)
     SET (CMAKE_CXX_COMPILER "clang++")
-    add_cxx_flag("-fsanitize=address")
-    add_cxx_flag("-fsanitize-coverage=edge,indirect-calls,8bit-counters")
+    add_compile_options("-fsanitize=address")
+    add_compile_options("-fsanitize-coverage=edge,indirect-calls,8bit-counters")
+endif()
+
+option(LARGEMEM "Allow memory usage to grow to Terabyte values -- uses 64b offsets. Slower, but allows the solver to run for much longer." OFF)
+if (LARGEMEM)
+    add_definitions(-DLARGE_OFFSETS)
 endif()
 
 option(SANITIZE "Use Clang sanitizers. This will force using clang++ as the compiler" OFF)
 if (SANITIZE)
     SET (CMAKE_CXX_COMPILER "clang++")
 
-    #add_cxx_flag("-fsanitize=address")
-    add_cxx_flag("-fsanitize=integer")
-    #add_cxx_flag("-fsanitize=undefined")
+    #add_compile_options("-fsanitize=address")
+    add_compile_options("-fsanitize=integer")
+    #add_compile_options("-fsanitize=undefined")
 
-    #add_cxx_flag("-fsanitize=null")
-    add_cxx_flag("-fsanitize=alignment")
-    #add_cxx_flag("-fno-sanitize-recover")
+    #add_compile_options("-fsanitize=null")
+    add_compile_options("-fsanitize=alignment")
+    #add_compile_options("-fno-sanitize-recover")
 
-    add_cxx_flag("-fsanitize=return")
-    add_cxx_flag("-fsanitize=bounds")
-    add_cxx_flag("-fsanitize=float-divide-by-zero")
-    add_cxx_flag("-fsanitize=integer-divide-by-zero")
-    add_cxx_flag("-fsanitize=unsigned-integer-overflow")
-    add_cxx_flag("-fsanitize=signed-integer-overflow")
-    add_cxx_flag("-fsanitize=bool")
-    add_cxx_flag("-fsanitize=enum")
-    add_cxx_flag("-fsanitize=float-cast-overflow")
-    add_cxx_flag("-Wno-bitfield-constant-conversion")
-    #add_cxx_flag("-Weverything")
-    add_cxx_flag("-Wshadow")
-    #add_cxx_flag("-Wshorten-64-to-32")
-    #add_cxx_flag("-Wweak-vtables")
-    add_cxx_flag("-Wextra-semi")
-    #add_cxx_flag("-Wsign-conversion")
-    #add_cxx_flag("-Wconversion")
-    add_cxx_flag("-Wdeprecated")
-    #set(CMAKE_EXE_LINKER_FLAGS " ${CMAKE_EXE_LINKER_FLAGS} -pie ")
+    add_compile_options("-fsanitize=return")
+    add_compile_options("-fsanitize=bounds")
+    add_compile_options("-fsanitize=float-divide-by-zero")
+    add_compile_options("-fsanitize=integer-divide-by-zero")
+    add_compile_options("-fsanitize=unsigned-integer-overflow")
+    add_compile_options("-fsanitize=signed-integer-overflow")
+    add_compile_options("-fsanitize=bool")
+    add_compile_options("-fsanitize=enum")
+    add_compile_options("-fsanitize=float-cast-overflow")
+
+    #add_compile_options("-Weverything")
+    #add_compile_options("-Wshorten-64-to-32")
+    #add_compile_options("-Wweak-vtables")
+    #add_compile_options("-Wsign-conversion")
+    #add_compile_options("-Wconversion")
 endif()
 
 include(CheckCXXCompilerFlag)
@@ -126,7 +150,7 @@ macro(add_cxx_flag_if_supported flagname)
   check_cxx_compiler_flag("${flagname}" HAVE_FLAG_${flagname})
 
   if(HAVE_FLAG_${flagname})
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}" )
   endif()
 endmacro()
 
@@ -151,29 +175,35 @@ else()
     add_definitions(-D_FORTIFY_SOURCE=0)
 endif()
 
-option(USE_PTHREADS "Build with pthreads-based threads" ON)
-if (USE_PTHREADS)
-    add_definitions(-DUSE_PTHREADS)
-    message(STATUS "No pthread will be used")
-endif()
-
 # Note: O3 gives slight speed increase, 1 more solved from SAT Comp'14 @ 3600s
 if (NOT MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -g")
-    if (USE_PTHREADS)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-    endif()
-    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 -mtune=native")
-    SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -g0 -DNDEBUG -mtune=native")
-    SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
+    add_compile_options( -g)
+    add_compile_options( -pthread )
+
+    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-O3>")
+    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-mtune=native>")
+
+    add_compile_options("$<$<CONFIG:RELEASE>:-O3>")
+    add_compile_options("$<$<CONFIG:RELEASE>:-g0>")
+    add_compile_options("$<$<CONFIG:RELEASE>:-DNDEBUG>")
+    add_compile_options("$<$<CONFIG:RELEASE>:-mtune=native>")
+
+    add_compile_options("$<$<CONFIG:DEBUG>:-O0>")
+
 else()
     # see https://msdn.microsoft.com/en-us/library/fwkeyyhe.aspx for details
     # /ZI = include debug info
-    # /W3 = warning level 3
     # /Wall = all warnings
-    SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /O3 /ZI")
-    SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O3 /D NDEBUG /ZI")
-    SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od")
+
+    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:/Ox>")
+    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:/ZI>")
+
+    add_compile_options("$<$<CONFIG:RELEASE>:/Ox>")
+    add_compile_options("$<$<CONFIG:RELEASE>:/D>")
+    add_compile_options("$<$<CONFIG:RELEASE>:/NDEBUG>")
+    add_compile_options("$<$<CONFIG:RELEASE>:/ZI>")
+
+    add_compile_options("$<$<CONFIG:DEBUG>:/Od>")
 
     # We statically link to reduce dependencies
     foreach(flag_var CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
@@ -188,12 +218,21 @@ else()
     # buffers security check
     add_compile_options(/GS)
 
-    # warnings
+    # Proper warning level
     add_compile_options(/W1)
+    # Disable STL used in DLL-boundary warning
+    add_compile_options(/wd4251)
+    add_compile_options(/D_CRT_SECURE_NO_WARNINGS)
+
+    # Wall is MSVC's Weverything, so annoying unless used from the start
+    # and with judiciously used warning disables
     # add_compile_options(/Wall)
 
     # /Za = only ansi C98 & C++11
-    add_compile_options(/Za)
+    # /Za is not recommended for use, not tested, etc.
+    # see: http://stackoverflow.com/questions/5489326/za-compiler-directive-does-not-compile-system-headers-in-vs2010
+    # add_compile_options(/Za)
+
     add_compile_options(/fp:precise)
 
     # exception handling. s = The exception-handling model that catches C++ exceptions only and tells the compiler to assume that functions declared as extern "C" may throw an exception.
@@ -211,25 +250,17 @@ else()
     set(DEF_INSTALL_CMAKE_DIR CMake)
 endif()
 
-include(CheckCXXCompilerFlag)
-macro(add_cxx_flag_if_supported flagname)
-  check_cxx_compiler_flag("${flagname}" HAVE_FLAG_${flagname})
-
-  if(HAVE_FLAG_${flagname})
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}")
-    message(STATUS "flag ${flagname} supported")
-  else()
-    message(STATUS "flag ${flagname} NOT supported")
-  endif()
-endmacro()
-
 option(ENABLE_TESTING "Enable testing" OFF)
+option(COVERAGE "Build with coverage check" OFF)
+option(STATICCOMPILE "Compile to static executable" OFF)
+if (COVERAGE AND NOT STATICCOMPILE)
+    MESSAGE(FATAL_ERROR "Coverage can only be computed on static compilation")
+endif()
 
 if (NOT WIN32)
     add_cxx_flag_if_supported("-Wall")
     add_cxx_flag_if_supported("-Wextra")
     add_cxx_flag_if_supported("-Wunused")
-    add_cxx_flag_if_supported("-pedantic")
     add_cxx_flag_if_supported("-Wsign-compare")
     if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
         add_cxx_flag_if_supported("-fno-omit-frame-pointer")
@@ -240,7 +271,7 @@ if (NOT WIN32)
     add_cxx_flag_if_supported("-Wstrict-aliasing")
     add_cxx_flag_if_supported("-Wpointer-arith")
     add_cxx_flag_if_supported("-Wheader-guard")
-    if(NOT ENABLE_TESTING AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    if(NOT ENABLE_TESTING AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT COVERAGE)
         add_cxx_flag_if_supported("-fvisibility=hidden")
     endif()
     add_cxx_flag_if_supported("-Wpointer-arith")
@@ -249,34 +280,51 @@ if (NOT WIN32)
     add_cxx_flag_if_supported("-Wparentheses")
     add_cxx_flag_if_supported("-Wunreachable-code")
     add_cxx_flag_if_supported("-ggdb3")
-    add_cxx_flag("-fPIC")
+    add_compile_options("-fPIC")
+
     # add_cxx_flag_if_supported("-flto") # slow compile and not enough benefits
     #add_cxx_flag_if_supported("-fno-exceptions")
 endif()
 
-option(IPASIR "Also build IPASIR" OFF)
-
-option(LIMITMEM "Limit memory used by CMS through number of variables" OFF)
-if (LIMITMEM)
-    set(LIMITMEM "ON")
+if (COVERAGE)
+    add_compile_options("--coverage")
+    SET(CMAKE_EXE_LINKER_FLAGS "--coverage")
 endif()
 
-option(COVERAGE "Build with coverage check" OFF)
-if (COVERAGE)
-    add_cxx_flag("--coverage")
+
+option(IPASIR "Also build IPASIR" ON)
+
+option(LIMITMEM "*Only used for testing*. Limit memory used by CMS through number of variables" OFF)
+if (LIMITMEM)
+    set(LIMITMEM "ON")
 endif()
 
 # -----------------------------------------------------------------------------
 # Uncomment these for static compilation under Linux (messes up Valgrind)
 # -----------------------------------------------------------------------------
-option(STATICCOMPILE "Compile to static executable (only works on linux)" OFF)
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(CMAKE_EXE_LINKER_FLAGS " ${CMAKE_EXE_LINKER_FLAGS} -Wl,--discard-all -Wl,--build-id=sha1")
+endif()
+
+if ((${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
     if(STATICCOMPILE)
         MESSAGE(STATUS "Compiling for static library use")
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -static ")
-        #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static ")
+        if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -static ")
+        endif()
+
         SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+
+        # removing -rdynamic that's automatically added
+        foreach (language CXX C)
+            set(VAR_TO_MODIFY "CMAKE_SHARED_LIBRARY_LINK_${language}_FLAGS")
+            string(REGEX REPLACE "(^| )-rdynamic($| )"
+                                 " "
+                                 replacement
+                                 "${${VAR_TO_MODIFY}}")
+            #message("Original (${VAR_TO_MODIFY}) is ${${VAR_TO_MODIFY}} replacement is ${replacement}")
+            set(${VAR_TO_MODIFY} "${replacement}" CACHE STRING "Default flags for ${build_config} configuration" FORCE)
+        endforeach()
     else()
         add_definitions(-DBOOST_TEST_DYN_LINK)
         MESSAGE(STATUS "Compiling for dynamic library use")
@@ -332,8 +380,6 @@ if (NOT ONLY_SIMPLE)
     find_package( Boost 1.46 COMPONENTS ${boost_components})
 endif()
 
-find_package (Threads REQUIRED)
-
 option(STATS "Don't use statistics at all" OFF)
 if (STATS)
     add_definitions( -DSTATS_NEEDED )
@@ -362,13 +408,6 @@ if (NOT NOZLIB AND NOT (STATICCOMPILE AND WIN32))
     find_package(ZLIB)
     IF (ZLIB_FOUND)
         MESSAGE(STATUS "OK, Found ZLIB!")
-        if(STATICCOMPILE AND WIN32)
-            # MESSAGE(STATUS "ZLIB library was set to be ${ZLIB_LIBRARY}")
-            # string(REPLACE "zlib.lib" "zlibstatic.lib" STATIC_ZLIB_LIBRARY ${ZLIB_LIBRARY})
-            # set(ZLIB_LIBRARY ${STATIC_ZLIB_LIBRARY})
-            # add_definitions( -DZLIB_WINAPI )
-            # MESSAGE(STATUS "Re-setting ZLIB library to be ${ZLIB_LIBRARY} for static compilation")
-        endif()
         include_directories(${ZLIB_INCLUDE_DIR})
         link_directories(${ZLIB_LIB_DIR})
         add_definitions( -DUSE_ZLIB )
@@ -438,27 +477,13 @@ endmacro()
 # -----------------------------------------------------------------------------
 option(ENABLE_PYTHON_INTERFACE "Enable Python interface" ON)
 
-if (STATICCOMPILE)
-    set(ENABLE_PYTHON_INTERFACE OFF)
-endif()
-
 find_package (PythonInterp 2.7)
-find_package (PythonLibs 2.7)
-if (PYTHON_EXECUTABLE AND PYTHON_LIBRARY AND PYTHON_INCLUDE_DIR AND NOT WIN32)
-    message(STATUS "PYTHON_EXECUTABLE:FILEPATH=${PYTHON_EXECUTABLE}")
-    message(STATUS "PYTHON_LIBRARY:FILEPATH=${PYTHON_LIBRARY}")
-    message(STATUS "PYTHON_INCLUDE_DIR:FILEPATH=${PYTHON_INCLUDE_DIR}")
-    message(STATUS "PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
-    set(PYTHON_OK ON)
-    message(STATUS "OK, found python interpreter, libs and header files")
-else()
-    message(WARNING "Cannot find python interpreter, libs and header files, cannot build python interface")
-endif()
+message(STATUS "PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}")
 
-if (ENABLE_PYTHON_INTERFACE AND PYTHON_OK)
-    message(STATUS "Building python interface")
-    add_subdirectory(python pycryptosat)
-endif()
+find_package(PythonLibs 2.7)
+message(STATUS "PYTHON_LIBRARIES=${PYTHON_LIBRARIES}")
+message(STATUS "PYTHON_INCLUDE_DIRS=${PYTHON_INCLUDE_DIRS}")
+message(STATUS "PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
 
 #command-line parsing executable needs boost program-options
 if(NOT Boost_FOUND)
@@ -517,6 +542,16 @@ else()
     message(WARNING "Testing is disabled")
 endif()
 
+if (ENABLE_PYTHON_INTERFACE)
+    if (PYTHON_EXECUTABLE AND PYTHON_LIBRARIES AND PYTHON_INCLUDE_DIRS AND NOT COVERAGE)
+        message(STATUS "Found python interpreter, libs and header files")
+        message(STATUS "Building python interface")
+        add_subdirectory(python pycryptosat)
+    else()
+        message(WARNING "Cannot find python interpreter, libs and header files, cannot build python interface")
+    endif()
+endif()
+
 # -----------------------------------------------------------------------------
 # Export our targets so that other CMake based projects can interface with
 # the build of cryptominisat5 in the build-tree
@@ -533,7 +568,13 @@ set(MY_TARGETS libcryptominisat5 cryptominisat5_simple)
 if (NOT ONLY_SIMPLE)
     set(MY_TARGETS ${MY_TARGETS} cryptominisat5)
 endif()
-export(TARGETS ${MY_TARGETS} FILE "${CMAKE_CURRENT_BINARY_DIR}/${CRYPTOMINISAT5_TARGETS_FILENAME}")
+if (IPASIR)
+    set(MY_TARGETS ${MY_TARGETS} ipasircryptominisat5)
+endif()
+export(
+    TARGETS ${MY_TARGETS}
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/${CRYPTOMINISAT5_TARGETS_FILENAME}"
+)
 
 # Create cryptominisat5Config file
 set(EXPORT_TYPE "Build-tree")
@@ -558,7 +599,7 @@ install(FILES
 )
 
 # Install the export set for use with the install-tree
-install(EXPORT ${CRYPTOMINISAT5_EXPORT_NAME} DESTINATION
-    "${CRYPTOMINISAT5_INSTALL_CMAKE_DIR}"
+install(
+    EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
+    DESTINATION "${CRYPTOMINISAT5_INSTALL_CMAKE_DIR}"
 )
-

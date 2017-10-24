@@ -35,7 +35,6 @@ THE SOFTWARE.
 #include "implcache.h"
 #include "propengine.h"
 #include "searcher.h"
-#include "cleaningstats.h"
 #include "clauseusagestats.h"
 #include "solvefeatures.h"
 #include "searchstats.h"
@@ -254,7 +253,6 @@ class Solver : public Searcher
         void check_too_large_variable_number(const vector<Lit>& lits) const;
         void set_assumptions();
 
-        lbool solve();
         lbool simplify_problem_outside();
         void move_to_outside_assumps(const vector<Lit>* assumps);
         vector<Lit> back_number_from_outside_to_outer_tmp;
@@ -312,15 +310,15 @@ class Solver : public Searcher
             vector<unsigned char> can_be_unset;
             vector<uint32_t>* trail_lim_vars;
             int64_t can_be_unsetSum;
-            bool must_fix;
+            bool must_fix_at_least_one_var;
             uint32_t num_fixed;
             bool verbose = false;
         };
         FindUndef* undef;
-        bool undef_check_must_fix();
+        bool undef_must_fix_var();
         void undef_fill_potentials();
         void undef_unset_potentials();
-        template<class C> bool undef_look_at_one_clause(const C c);
+        template<class C> bool undef_clause_surely_satisfied(const C c);
 
 
 
@@ -422,13 +420,6 @@ inline void Solver::move_to_outside_assumps(const vector<Lit>* assumps)
             outside_assumptions.push_back(lit);
         }
     }
-}
-
-inline lbool Solver::solve_with_assumptions(
-    const vector<Lit>* _assumptions
-) {
-    move_to_outside_assumps(_assumptions);
-    return solve();
 }
 
 inline lbool Solver::simplify_with_assumptions(

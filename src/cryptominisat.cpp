@@ -65,14 +65,8 @@ namespace CMSat {
             delete log; //this will also close the file
             delete shared_data;
         }
-        CMSatPrivateData(CMSatPrivateData&) //copy should fail
-        {
-            std::exit(-1);
-        }
-        CMSatPrivateData(const CMSatPrivateData&) //copy should fail
-        {
-            std::exit(-1);
-        }
+        CMSatPrivateData(const CMSatPrivateData&) = delete;
+        CMSatPrivateData& operator=(const CMSatPrivateData&) = delete;
 
         vector<Solver*> solvers;
         SharedData *shared_data = NULL;
@@ -156,17 +150,23 @@ void update_config(SolverConf& conf, unsigned thread_num)
             break;
         }
         case 2: {
-            //Similar to old CMS except we look at learnt DB size insteead
+            //Similar to CMS 2.9 except we look at learnt DB size insteead
             //of conflicts to see if we need to clean.
-            conf.ratio_keep_clauses[clean_to_int(ClauseClean::activity)] = 0;
             conf.ratio_keep_clauses[clean_to_int(ClauseClean::glue)] = 0.5;
+            conf.ratio_keep_clauses[clean_to_int(ClauseClean::activity)] = 0;
             conf.glue_put_lev0_if_below_or_eq = 0;
             conf.inc_max_temp_lev2_red_cls = 1.03;
             break;
         }
         case 3: {
-            //conf.max_temporary_learnt_clauses = 40000;
-            conf.var_decay_max = 0.80;
+            //Similar to CMS 5.0
+            conf.every_lev1_reduce = 0;
+            conf.every_lev2_reduce = 0;
+            conf.max_temp_lev2_learnt_clauses = 30000;
+            conf.glue_put_lev0_if_below_or_eq = 4;
+
+            conf.ratio_keep_clauses[clean_to_int(ClauseClean::glue)] = 0;
+            conf.ratio_keep_clauses[clean_to_int(ClauseClean::activity)] = 0.5;
             break;
         }
         case 4: {
@@ -392,6 +392,7 @@ DLL_PUBLIC void SATSolver::set_no_simplify()
 {
     for (size_t i = 0; i < data->solvers.size(); ++i) {
         Solver& s = *data->solvers[i];
+        s.conf.doRenumberVars = false;
         s.conf.simplify_at_startup = false;
         s.conf.simplify_at_every_startup = false;
         s.conf.full_simplify_at_startup = false;
@@ -442,6 +443,7 @@ DLL_PUBLIC void SATSolver::set_no_bva()
 
 DLL_PUBLIC void SATSolver::set_greedy_undef()
 {
+    assert(false && "Currently greedy undef is not supported, broken");
     for (size_t i = 0; i < data->solvers.size(); ++i) {
         Solver& s = *data->solvers[i];
         s.conf.greedy_undef = true;
@@ -554,9 +556,9 @@ struct OneThreadCalc
     {
         if (print_thread_start_and_finish) {
             start_time = cpuTime();
-            data_for_thread.update_mutex->lock();
+            //data_for_thread.update_mutex->lock();
             //cout << "c Starting thread " << tid << endl;
-            data_for_thread.update_mutex->unlock();
+            //data_for_thread.update_mutex->unlock();
         }
 
         OneThreadAddCls cls_adder(data_for_thread, tid);
@@ -571,10 +573,12 @@ struct OneThreadCalc
         if (print_thread_start_and_finish) {
             double end_time = cpuTime();
             data_for_thread.update_mutex->lock();
+            ios::fmtflags f(cout.flags());
             cout << "c Finished thread " << tid << " with result: " << ret
             << " T-diff: " << std::fixed << std::setprecision(2)
             << (end_time-start_time)
             << endl;
+            cout.flags(f);
             data_for_thread.update_mutex->unlock();
         }
 
@@ -835,3 +839,32 @@ DLL_PUBLIC void SATSolver::set_sqlite(std::string filename)
     data->solvers[0]->set_sqlite(filename);
 }
 
+DLL_PUBLIC uint64_t SATSolver::get_sum_conflicts()
+{
+    uint64_t conlf = 0;
+    for (size_t i = 0; i < data->solvers.size(); ++i) {
+        Solver& s = *data->solvers[i];
+        conlf += s.sumConflicts;
+    }
+    return conlf;
+}
+
+DLL_PUBLIC uint64_t SATSolver::get_sum_propagations()
+{
+    uint64_t props = 0;
+    for (size_t i = 0; i < data->solvers.size(); ++i) {
+        Solver& s = *data->solvers[i];
+        props += s.sumPropStats.propagations;
+    }
+    return props;
+}
+
+DLL_PUBLIC uint64_t SATSolver::get_sum_decisions()
+{
+    uint64_t dec = 0;
+    for (size_t i = 0; i < data->solvers.size(); ++i) {
+        Solver& s = *data->solvers[i];
+        dec += s.sumSearchStats.decisions;
+    }
+    return dec;
+}

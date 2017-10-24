@@ -211,19 +211,22 @@ void OccSimplifier::extend_model(SolutionExtender* extender)
         if (it->dummy) {
             extender->dummyBlocked(it->blockedOn);
         } else {
+            //Check if clause can be removed, update literals to replaced literals
             for(Lit& l: it->lits) {
                 l = solver->varReplacer->get_lit_replaced_with_outer(l);
-                if (solver->model_value(l) == l_True) {
-                    goto next;
-                }
 
-                //Check if it can be removed
+                //Check if clause can be removed because it's set at dec level 0
                 Lit inter = solver->map_outer_to_inter(l);
                 if (solver->value(inter) == l_True
                     && solver->varData[inter.var()].level == 0
                 ) {
                     it->toRemove = true;
                     can_remove_blocked_clauses = true;
+                    goto next;
+                }
+
+                //Blocked clause can be skipped, it's satisfied
+                if (solver->model_value(l) == l_True) {
                     goto next;
                 }
             }
@@ -499,7 +502,7 @@ OccSimplifier::LinkInData OccSimplifier::link_in_clauses(
             << " cl->size() < max_size: " << (cl->size() < max_size)
             << " link_in_lit_limit: " << link_in_lit_limit << endl;*/
             //assert(cl->red());
-            cl->set_occur_linked(false);
+            cl->setOccurLinked(false);
             link_in_data.cl_not_linked++;
             std::sort(cl->begin(), cl->end());
         }
@@ -603,7 +606,10 @@ void OccSimplifier::add_back_to_solver()
             if (cl->red()) {
                 if (cl->stats.glue <= solver->conf.glue_put_lev0_if_below_or_eq) {
                     cl->stats.which_red_array = 0;
-                } else if (cl->stats.glue <= solver->conf.glue_put_lev1_if_below_or_eq) {
+                } else if (
+                    cl->stats.glue <= solver->conf.glue_put_lev1_if_below_or_eq
+                    && solver->conf.glue_put_lev1_if_below_or_eq != 0
+                ) {
                     cl->stats.which_red_array = 1;
                 }
                 solver->longRedCls[cl->stats.which_red_array].push_back(offs);
@@ -1408,8 +1414,8 @@ size_t OccSimplifier::rem_cls_from_watch_due_to_varelim(
                 lits.resize(cl.size());
                 std::copy(cl.begin(), cl.end(), lits.begin());
                 add_clause_to_blck(lit, lits);
-                for(Lit lit: lits) {
-                    touched.touch(lit);
+                for(Lit l: lits) {
+                    touched.touch(l);
                 }
             } else {
                 red = true;
@@ -1783,7 +1789,7 @@ void OccSimplifier::update_varelim_complexity_heap(const uint32_t elimed_var)
         return;
 
     if (num_otf_update_until_now > solver->conf.updateVarElimComplexityOTF_limitvars
-        || time_spent_on_calc_otf_update > solver->conf.updateVarElimComplexityOTF_limitavg*100000
+        || time_spent_on_calc_otf_update > solver->conf.updateVarElimComplexityOTF_limitavg*100ULL*1000ULL
     ) {
         const double avg = float_div(time_spent_on_calc_otf_update, num_otf_update_until_now);
 
@@ -2522,7 +2528,7 @@ void OccSimplifier::linkInClause(Clause& cl)
 
         ws.push(Watched(offset, cl.abst));
     }
-    cl.set_occur_linked(true);
+    cl.setOccurLinked(true);
 }
 
 

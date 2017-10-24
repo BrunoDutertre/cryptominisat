@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2014  Mate Soos
@@ -22,19 +22,11 @@ from __future__ import with_statement  # Required in 2.5
 from __future__ import print_function
 import subprocess
 import os
-import fnmatch
-import gzip
-import re
 import commands
-import getopt
 import sys
-import signal
 import time
-import struct
 import random
 from random import choice
-from subprocess import Popen, PIPE, STDOUT
-# from optparse import OptionParser
 import optparse
 import glob
 from verifier import *
@@ -82,6 +74,8 @@ parser.add_option("--fuzzlim", dest="fuzz_test_lim", type=int,
                   )
 parser.add_option("--novalgrind", dest="novalgrind", default=False,
                   action="store_true", help="No valgrind installed")
+parser.add_option("--valgrindfreq", dest="valgrind_freq", type=int,
+                  default=10, help="1 out of X times valgrind will be used. Default: %default in 1")
 
 parser.add_option("--small", dest="small", default=False,
                   action="store_true",
@@ -94,6 +88,9 @@ parser.add_option("--sqlite", dest="sqlite", default=False,
 parser.add_option("--gauss", dest="test_gauss", default=False,
                   action="store_true", help="Test gauss too")
 
+parser.add_option("--maxthreads", dest="max_threads", default=100,
+                  type=int, help="Max number of threads")
+
 parser.add_option("--tout", "-t", dest="maxtime", type=int, default=35,
                   help="Max time to run. Default: %default")
 
@@ -102,6 +99,10 @@ parser.add_option("--textra", dest="maxtimediff", type=int, default=10,
                   " Default: %default")
 
 (options, args) = parser.parse_args()
+
+if options.valgrind_freq <= 0:
+    print("Valgrind Frequency must be at least 1")
+    exit(-1)
 
 
 def fuzzer_call_failed():
@@ -136,7 +137,7 @@ class create_fuzz:
             # sometimes just fuzz with all SAT problems
             fixed = random.getrandbits(1) == 1
 
-            for i in range(random.randrange(2, 4)):
+            for _ in range(random.randrange(2, 4)):
                 fname2 = unique_file("fuzzTest")
                 fnames_multi.append(fname2)
 
@@ -181,6 +182,8 @@ def file_exists(fname):
 
 def print_version():
     command = options.solver + " --version"
+    if options.verbose:
+        print("Executing: %s" % command)
     p = subprocess.Popen(command.rsplit(), stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
     consoleOutput, err = p.communicate()
     print("Version values: %s" % consoleOutput.strip())
@@ -249,11 +252,12 @@ class Tester:
         cmd = " --zero-exit-status "
 
         if random.choice([True, False]):
-            cmd += " --reconf %d " % random.choice([3, 6, 7, 12, 13, 14])
-            cmd += " --undef %d " % random.choice([0, 1])
+            cmd += "--maple %d " % random.choice([0, 0, 0, 1])
+            cmd += "--reconf %d " % random.choice([3, 6, 7, 12, 13, 14])
+            # cmd += "--undef %d " % random.choice([0, 1])
             cmd += " --reconfat %d " % random.randint(0, 2)
             cmd += "--burst %d " % random.choice([0, 100, random.randint(0, 10000)])
-            cmd += "--keepguess %s " % random.randint(0, 10)
+            cmd += "--ml  %s " % random.randint(0, 10)
             cmd += "--restart %s " % random.choice(
                 ["geom", "glue", "luby"])
             cmd += "--adjustglue %f " % random.choice([0, 0.5, 0.7, 1.0])
@@ -315,7 +319,7 @@ class Tester:
                     print("available schedule options: %s" % opts)
 
                 sched = []
-                for i in range(int(random.gammavariate(12, 0.7))):
+                for _ in range(int(random.gammavariate(12, 0.7))):
                     sched.append(random.choice(opts))
 
                 if "autodisablegauss" in self.extra_options_if_supported and options.test_gauss:
@@ -360,7 +364,7 @@ class Tester:
 
         # construct command
         command = ""
-        if not options.novalgrind and random.randint(0, 10) == 0:
+        if not options.novalgrind and random.randint(1, options.valgrind_freq) == 1:
             command += "valgrind -q --leak-check=full  --error-exitcode=9 "
         command += options.solver
         if rnd_opts is None:
@@ -368,7 +372,7 @@ class Tester:
         command += rnd_opts
         if self.needDebugLib:
             command += "--debuglib %s " % fname
-        if options.verbose is False:
+        if not options.verbose:
             command += "--verb 0 "
         command += "--threads %d " % self.num_threads
         command += options.extra_options + " "
@@ -393,7 +397,7 @@ class Tester:
 
         # print time limit after child startup
         if options.verbose:
-            print("CPU limit of parent (pid %d) after startup of child" %
+            print("CPU limit of parent (pid %d) after startup of child: %s secs" %
                   (os.getpid(), resource.getrlimit(resource.RLIMIT_CPU)))
 
         # Get solver output
@@ -415,7 +419,7 @@ class Tester:
         os.unlink(err_fname)
 
         if options.verbose:
-            print("CPU limit of parent (pid %d) after child finished executing" %
+            print("CPU limit of parent (pid %d) after child finished executing: %s" %
                   (os.getpid(), resource.getrlimit(resource.RLIMIT_CPU)))
 
         return consoleOutput, retcode
@@ -445,6 +449,9 @@ class Tester:
         print("Within time limit: %.2f s" % diff_time)
         print("filename: %s" % fname)
 
+        if options.verbose:
+            print(consoleOutput)
+
         # if library debug is set, check it
         if (self.needDebugLib):
             self.sol_parser.check_debug_lib(checkAgainst)
@@ -470,7 +477,7 @@ class Tester:
 
         # it's UNSAT, let's check with DRAT
         if fname2:
-            toexec = "drat-trim %s %s" % (fname, fname2)
+            toexec = "../../build/tests/drat-trim/drat-trim %s %s" % (fname, fname2)
             print("Checking DRAT...: ", toexec)
             p = subprocess.Popen(toexec.rsplit(), stdout=subprocess.PIPE)
             consoleOutput2 = p.communicate()[0]
@@ -507,9 +514,11 @@ class Tester:
             exit()
 
     def fuzz_test_one(self):
-        print("\n--- NORMAL TESTING ---")
+        print("--- NORMAL TESTING ---")
         self.num_threads = random.choice([1, 2, 4])
+        self.num_threads = min(options.max_threads, self.num_threads)
         self.drat = self.num_threads == 1 and random.choice([True, False])
+
         if self.drat:
             fuzzers = fuzzers_drat
         else:
@@ -558,7 +567,7 @@ class Tester:
             pass
 
     def fuzz_test_preproc(self):
-        print("\n--- PREPROC TESTING ---")
+        print("--- PREPROC TESTING ---")
         tester.needDebugLib = False
         fuzzer = random.choice(fuzzers_drat)
         self.num_threads = 1
@@ -642,10 +651,14 @@ while True:
     toexec = "./fuzz_test.py --fuzzlim 1 --seed %d" % rnd_seed
     if options.novalgrind:
         toexec += " --novalgrind"
+    if options.valgrind_freq:
+        toexec += " --valgrindfreq %d" % options.valgrind_freq
     if options.small:
         toexec += " --small"
 
-    print("To re-create fuzz-test below: %s" % toexec)
+    print("")
+    print("")
+    print("--> To re-create fuzz-test below: %s" % toexec)
 
     random.seed(rnd_seed)
     if random.choice([True, False]):

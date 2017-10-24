@@ -262,8 +262,8 @@ void Main::add_supported_options()
         , "Stop solving after this much time (s)")
     ("maxconfl", po::value(&conf.maxConfl)->default_value(conf.maxConfl, "MAX")
         , "Stop solving after this many conflicts")
-    ("undef", po::value(&conf.greedy_undef)->default_value(conf.greedy_undef)
-        , "Set as many variables in solution to UNDEF as possible if solution is SAT")
+//     ("undef", po::value(&conf.greedy_undef)->default_value(conf.greedy_undef)
+//         , "Set as many variables in solution to UNDEF as possible if solution is SAT")
     ("mult,m", po::value(&conf.orig_global_timeout_multiplier)->default_value(conf.orig_global_timeout_multiplier)
         , "Multiplier for all simplification cutoffs")
     ("preproc,p", po::value(&conf.preprocess)->default_value(conf.preprocess)
@@ -272,6 +272,8 @@ void Main::add_supported_options()
         , "{true,false,rnd,auto} Selects polarity mode. 'true' -> selects only positive polarity when branching. 'false' -> selects only negative polarity when brancing. 'auto' -> selects last polarity used (also called 'caching')")
     ("clid", po::bool_switch(&clause_ID_needed)
         , "Add clause IDs to DRAT output")
+    ("maple", po::value(&conf.maple)->default_value(conf.maple)
+        , "Use maple-type variable picking sometimes")
     //("greedyunbound", po::bool_switch(&conf.greedyUnbound)
     //    , "Greedily unbound variables that are not needed for SAT")
     ;
@@ -305,11 +307,11 @@ void Main::add_supported_options()
     ("gluecut0", po::value(&conf.glue_put_lev0_if_below_or_eq)->default_value(conf.glue_put_lev0_if_below_or_eq)
         , "Glue value for lev 0 ('keep') cut")
     ("gluecut1", po::value(&conf.glue_put_lev1_if_below_or_eq)->default_value(conf.glue_put_lev1_if_below_or_eq)
-        , "Glue value for lev 1 cut")
+        , "Glue value for lev 1 cut ('give another shot'")
     ("adjustglue", po::value(&conf.adjust_glue_if_too_many_low)->default_value(conf.adjust_glue_if_too_many_low, s_adjust_low.str())
-        , "Keep all clauses at or below this value")
-    ("keepguess", po::value(&conf.guess_cl_effectiveness)->default_value(conf.guess_cl_effectiveness)
-        , "Keep clauses that we guess to be good")
+        , "If more than this % of clauses is LOW glue (level 0) then lower the glue cutoff by 1 -- once and never again")
+    ("ml", po::value(&conf.guess_cl_effectiveness)->default_value(conf.guess_cl_effectiveness)
+        , "Use ML model to guess clause effectiveness")
     ;
 
     std::ostringstream s_random_var_freq;
@@ -549,6 +551,8 @@ void Main::add_supported_options()
         , "Change verbosity of statistics at the end of the solving [0..2]")
     ("verbrestart", po::value(&conf.print_full_restart_stat)->default_value(conf.print_full_restart_stat)
         , "Print more thorough, but different stats")
+    ("verballrestarts", po::value(&conf.print_all_restarts)->default_value(conf.print_all_restarts)
+        , "Print a line for every restart")
     ("printsol,s", po::value(&printResult)->default_value(printResult)
         , "Print assignment if solution is SAT")
     ("restartprint", po::value(&conf.print_restart_line_every_n_confl)->default_value(conf.print_restart_line_every_n_confl)
@@ -1069,8 +1073,8 @@ void Main::parseCommandLine()
 
     try {
         manually_parse_some_options();
-    } catch(WrongParam& p) {
-        cerr << "ERROR: " << p.getMsg() << endl;
+    } catch(WrongParam& wp) {
+        cerr << "ERROR: " << wp.getMsg() << endl;
         exit(-1);
     }
 }
@@ -1124,7 +1128,7 @@ void Main::check_num_threads_sanity(const unsigned thread_num) const
     }
 
     if (thread_num > num_cores && conf.verbosity) {
-        std::cerr
+        std::cout
         << "c WARNING: Number of threads requested is more than the number of"
         << " cores reported by the system.\n"
         << "c WARNING: This is not a good idea in general. It's best to set the"

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2016  Mate Soos
@@ -22,6 +22,7 @@ from __future__ import print_function
 
 from verifier import *
 import unittest
+
 
 class Map(dict):
     """

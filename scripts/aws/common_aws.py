@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import print_function
-import os
 import boto
 import traceback
 import sys
@@ -59,13 +58,7 @@ def get_ip_address(ifname):
 
 
 def get_revision(full_solver_path, base_dir):
-    _, solvername = os.path.split(full_solver_path)
-    if solvername == "cryptominisat":
-        os.chdir('%s/cryptominisat' % base_dir)
-        revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
-    else:
-        revision = solvername
-
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
     return revision.strip()
 
 
@@ -85,9 +78,8 @@ def upload_log(bucket, folder, logfile_name, fname):
         print("traceback for boto issue: %s" % the_trace)
 
 
-def get_s3_folder(folder, rev, timeout, memout):
+def get_s3_folder(folder, rev, solver, timeout, memout):
     print("folder: %s rev: %s tout: %s memout %s" % (folder, rev, timeout, memout))
-    return folder + "-%s-tout-%d-mout-%d" \
-        % (rev[:9],
-           timeout,
-           memout)
+    solver_exe = solver[solver.rfind("/")+1:]
+    return folder + "-{rev}-{solver}-tout-{tout}-mout-{mout}".format(
+        rev=rev[:9], solver=solver_exe, tout=timeout, mout=memout)

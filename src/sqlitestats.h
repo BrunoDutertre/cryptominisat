@@ -30,7 +30,7 @@ class SQLiteStats: public SQLStats
 {
 public:
     ~SQLiteStats() override;
-    SQLiteStats(std::string _filename) :
+    explicit SQLiteStats(std::string _filename) :
         filename(_filename)
     {
     }
@@ -43,9 +43,9 @@ public:
     ) override;
 
     void reduceDB(
-        const ClauseUsageStats& irredStats
-        , const ClauseUsageStats& redStats
-        , const CleaningStats& clean
+        uint64_t level
+        , uint64_t num_cleans
+        , uint64_t num_removed
         , const Solver* solver
     ) override;
 

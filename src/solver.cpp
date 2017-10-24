@@ -372,7 +372,7 @@ and only internally
 Clause* Solver::add_clause_int(
     const vector<Lit>& lits
     , const bool red
-    , ClauseStats stats
+    , ClauseStats cl_stats
     , const bool attach_long
     , vector<Lit>* finalLits
     , bool addDrat
@@ -385,9 +385,10 @@ Clause* Solver::add_clause_int(
     cout << "add_clause_int clause " << lits << endl;
     #endif //VERBOSE_DEBUG
 
-    //Make stats sane
+    //Make cl_stats sane
     #ifdef STATS_NEEDED
-    stats.introduced_at_conflict = std::min<uint64_t>(Searcher::sumConflicts, stats.introduced_at_conflict);
+    uint64_t introduced_at_conflict =
+        std::min<uint64_t>(Searcher::sumConflicts, cl_stats.introduced_at_conflict);
     #endif
 
     vector<Lit> ps = lits;
@@ -456,9 +457,12 @@ Clause* Solver::add_clause_int(
             #endif
             );
             if (red) {
-                c->makeRed(stats.glue);
+                c->makeRed(cl_stats.glue);
             }
-            c->stats = stats;
+            c->stats = cl_stats;
+            #ifdef STATS_NEEDED
+            c->stats.introduced_at_conflict = introduced_at_conflict;
+            #endif
 
             //In class 'OccSimplifier' we don't need to attach normall
             if (attach_long) {
@@ -752,8 +756,8 @@ void Solver::test_renumbering() const
 void Solver::renumber_clauses(const vector<uint32_t>& outerToInter)
 {
     //Clauses' abstractions have to be re-calculated
-    for(size_t i = 0; i < longIrredCls.size(); i++) {
-        Clause* cl = cl_alloc.ptr(longIrredCls[i]);
+    for(ClOffset offs: longIrredCls) {
+        Clause* cl = cl_alloc.ptr(offs);
         updateLitsMap(*cl, outerToInter);
         cl->setStrenghtened();
     }
@@ -869,6 +873,7 @@ void Solver::renumber_variables(bool must_renumber)
     }
 
     renumber_clauses(outerToInter);
+    renumber_xor_clauses(outerToInter);
     CNF::updateVars(outerToInter, interToOuter);
     PropEngine::updateVars(outerToInter, interToOuter, interToOuter2);
     Searcher::updateVars(outerToInter, interToOuter);
@@ -876,7 +881,6 @@ void Solver::renumber_variables(bool must_renumber)
     if (conf.doStamp) {
         stamp.updateVars(outerToInter, interToOuter2, seen);
     }
-    renumber_xor_clauses(outerToInter);
 
     //Update sub-elements' vars
     varReplacer->updateVars(outerToInter, interToOuter);
@@ -1024,6 +1028,7 @@ void Solver::set_assumptions()
 {
     assert(okay());
 
+    unfill_assumptions_set_from(assumptions);
     conflict.clear();
     assumptions.clear();
 
@@ -1071,15 +1076,15 @@ void Solver::check_model_for_assumptions() const
 
 void Solver::check_recursive_minimization_effectiveness(const lbool status)
 {
-    const SearchStats& stats = Searcher::get_stats();
+    const SearchStats& srch_stats = Searcher::get_stats();
     if (status == l_Undef
         && conf.doRecursiveMinim
-        && stats.recMinLitRem + stats.litsRedNonMin > 100000
+        && srch_stats.recMinLitRem + srch_stats.litsRedNonMin > 100000
     ) {
         double remPercent =
-            float_div(stats.recMinLitRem, stats.litsRedNonMin)*100.0;
+            float_div(srch_stats.recMinLitRem, srch_stats.litsRedNonMin)*100.0;
 
-        double costPerGained = float_div(stats.recMinimCost, remPercent);
+        double costPerGained = float_div(srch_stats.recMinimCost, remPercent);
         if (costPerGained > 200ULL*1000ULL*1000ULL) {
             conf.doRecursiveMinim = false;
             if (conf.verbosity) {
@@ -1232,11 +1237,14 @@ lbool Solver::simplify_problem_outside()
         status = simplify_problem(false);
     }
     unfill_assumptions_set_from(assumptions);
+    assumptions.clear();
     return status;
 }
 
-lbool Solver::solve()
-{
+lbool Solver::solve_with_assumptions(
+    const vector<Lit>* _assumptions
+) {
+    move_to_outside_assumps(_assumptions);
     #ifdef SLOW_DEBUG
     if (ok) {
         assert(check_order_heap_sanity());
@@ -1342,6 +1350,7 @@ lbool Solver::solve()
 
     handle_found_solution(status);
     unfill_assumptions_set_from(assumptions);
+    assumptions.clear();
     conf.maxConfl = std::numeric_limits<long>::max();
     conf.maxTime = std::numeric_limits<double>::max();
     return status;
@@ -1843,27 +1852,27 @@ lbool Solver::simplify_problem(const bool startup)
 
 void Solver::print_prop_confl_stats(
     std::string name
-    , const vector<ClauseUsageStats>& stats
+    , const vector<ClauseUsageStats>& cl_usage_stats
 ) const {
-    for(size_t i = 0; i < stats.size(); i++) {
+    for(size_t i = 0; i < cl_usage_stats.size(); i++) {
         //Nothing to do here, no stats really
-        if (stats[i].num == 0)
+        if (cl_usage_stats[i].num == 0)
             continue;
 
         cout
         << name << " : " << std::setw(4) << i
         << " Avg. props: " << std::setw(6) << std::fixed << std::setprecision(2)
-        << float_div(stats[i].sumProp, stats[i].num);
+        << float_div(cl_usage_stats[i].sumProp, cl_usage_stats[i].num);
 
         cout
         << name << " : " << std::setw(4) << i
         << " Avg. confls: " << std::setw(6) << std::fixed << std::setprecision(2)
-        << float_div(stats[i].sumConfl, stats[i].num);
+        << float_div(cl_usage_stats[i].sumConfl, cl_usage_stats[i].num);
 
-        if (stats[i].sumLookedAt > 0) {
+        if (cl_usage_stats[i].sumLookedAt > 0) {
             cout
             << " Props&confls/looked at: " << std::setw(6) << std::fixed << std::setprecision(2)
-            << float_div(stats[i].sumPropAndConfl(), stats[i].sumLookedAt);
+            << float_div(cl_usage_stats[i].sumPropAndConfl(), cl_usage_stats[i].sumLookedAt);
         }
 
         cout << endl;
@@ -1977,8 +1986,8 @@ void Solver::print_norm_stats(const double cpu_time) const
     );
 
     print_stats_line("c reduceDB time"
-        , reduceDB->get_stats().cpu_time
-        , stats_line_percent(reduceDB->get_stats().cpu_time, cpu_time)
+        , reduceDB->get_total_time()
+        , stats_line_percent(reduceDB->get_total_time(), cpu_time)
         , "% time"
     );
 
@@ -2056,7 +2065,7 @@ void Solver::print_full_restart_stat(const double cpu_time) const
         , float_div(propStats.propagations, sumConflicts)
     );
     cout << "c ------- FINAL TOTAL SOLVING STATS END ---------" << endl;
-    reduceDB->get_stats().print(cpu_time);
+    //reduceDB->get_total_time().print(cpu_time);
 
     print_stats_line("c 0-depth assigns", trail.size()
         , stats_line_percent(trail.size(), nVars())
@@ -2832,8 +2841,14 @@ void Solver::update_assumptions_after_varreplace()
                 && "There can be NO other reason -- vars in assumptions cannot be elimed or decomposed");
         }
 
+        Lit orig = lit_pair.lit_inter;
         lit_pair.lit_inter = varReplacer->get_lit_replaced_with(lit_pair.lit_inter);
+        //remove old from set
+        if (orig != lit_pair.lit_inter && assumptionsSet.size() > orig.var()) {
+                assumptionsSet[orig.var()] = false;
+        }
 
+        //add new to set
         if (assumptionsSet.size() > lit_pair.lit_inter.var()) {
             assumptionsSet[lit_pair.lit_inter.var()] = true;
         }
@@ -2907,7 +2922,7 @@ SolveFeatures Solver::calculate_features() const
     SolveFeaturesCalc extract(this);
     SolveFeatures feat = extract.extract();
     feat.avg_confl_size = hist.conflSizeHistLT.avg();
-    feat.avg_confl_glue = hist.glueHistLT.avg();
+    feat.avg_confl_glue = hist.glueHistLTAll.avg();
     feat.avg_num_resolutions = hist.numResolutionsHistLT.avg();
     feat.avg_trail_depth_delta = hist.trailDepthDeltaHist.avg();
     feat.avg_branch_depth = hist.branchDepthHist.avg();
@@ -2915,8 +2930,8 @@ SolveFeatures Solver::calculate_features() const
 
     feat.confl_size_min = hist.conflSizeHistLT.getMin();
     feat.confl_size_max = hist.conflSizeHistLT.getMax();
-    feat.confl_glue_min = hist.glueHistLT.getMin();
-    feat.confl_glue_max = hist.glueHistLT.getMax();
+    feat.confl_glue_min = hist.glueHistLTAll.getMin();
+    feat.confl_glue_max = hist.glueHistLTAll.getMax();
     feat.branch_depth_min = hist.branchDepthHist.getMin();
     feat.branch_depth_max = hist.branchDepthHist.getMax();
     feat.trail_depth_delta_min = hist.trailDepthDeltaHist.getMin();
@@ -3348,6 +3363,7 @@ void Solver::add_sql_tag(const string& tagname, const string& tag)
 
 uint32_t Solver::undefine(vector<uint32_t>& trail_lim_vars)
 {
+    assert(undef == NULL);
     undef = new FindUndef;
     undef->trail_lim_vars = &trail_lim_vars;
     undef->can_be_unsetSum = 0;
@@ -3374,9 +3390,7 @@ uint32_t Solver::undefine(vector<uint32_t>& trail_lim_vars)
         cout << "--" << endl;
     }
 
-    while(undef_check_must_fix()
-        && undef->can_be_unsetSum > 0
-    ) {
+    while(undef_must_fix_var() && undef->can_be_unsetSum > 0) {
         //Find variable to fix.
         int32_t maximum = -1;
         uint32_t v = var_Undef;
@@ -3391,6 +3405,7 @@ uint32_t Solver::undefine(vector<uint32_t>& trail_lim_vars)
                 }
             }
         }
+        assert(maximum > 0);
         if (undef->verbose) cout << "--" << endl;
         assert(v != var_Undef && "maximum satisfied by this var is zero? Then can_be_unsetSum was wrongly calculated!");
 
@@ -3410,6 +3425,9 @@ uint32_t Solver::undefine(vector<uint32_t>& trail_lim_vars)
 
     int toret = undef->can_be_unsetSum;
     delete undef;
+    undef = NULL;
+
+    verify_model();
     return toret;
 }
 
@@ -3427,12 +3445,11 @@ void Solver::undef_fill_potentials()
 
         assert(varData[v].removed == Removed::none);
         assert(assumptionsSet.size() > v);
-        if (model_value(v) != l_Undef
-            && assumptionsSet[v] == false
-        ) {
+        if (model_value(v) != l_Undef && assumptionsSet[v] == false) {
             assert(undef->can_be_unset[v] == 0);
             undef->can_be_unset[v] ++;
             if (conf.independent_vars == NULL) {
+                undef->can_be_unset[v] ++;
                 undef->can_be_unsetSum++;
             }
         }
@@ -3443,7 +3460,7 @@ void Solver::undef_fill_potentials()
         cout << "-" << endl;
     }
 
-    //More stringent check for "can_be_unset"
+    //If independent_vars is set, only care about those, nothing else.
     if (conf.independent_vars) {
         for(uint32_t v: *conf.independent_vars) {
             if (v > nVarsOutside()) {
@@ -3467,7 +3484,7 @@ void Solver::undef_fill_potentials()
 
         //Only those with a setting of both independent_vars and in trail
         //can be unset
-        for(unsigned char& v: undef->can_be_unset) {
+        for(auto& v: undef->can_be_unset) {
             if (v < 2) {
                 v = false;
             }
@@ -3495,7 +3512,7 @@ void Solver::undef_unset_potentials()
 }
 
 template<class C>
-bool Solver::undef_look_at_one_clause(const C c)
+bool Solver::undef_clause_surely_satisfied(const C c)
 {
     if (undef->verbose) {
         cout << "Check called on clause: ";
@@ -3507,11 +3524,11 @@ bool Solver::undef_look_at_one_clause(const C c)
     }
 
     uint32_t v = var_Undef;
-    uint32_t numTrue = 0;
+    uint32_t numTrue_can_be_unset = 0;
     for (const Lit l: *c) {
         if (model_value(l) == l_True) {
             if (undef->can_be_unset[l.var()]) {
-                numTrue ++;
+                numTrue_can_be_unset ++;
                 v = l.var();
             } else {
                 return true;
@@ -3520,7 +3537,7 @@ bool Solver::undef_look_at_one_clause(const C c)
     }
 
     //Greedy
-    if (numTrue == 1) {
+    if (numTrue_can_be_unset == 1) {
         assert(v != var_Undef);
         assert(undef->can_be_unset[v]);
 
@@ -3531,9 +3548,8 @@ bool Solver::undef_look_at_one_clause(const C c)
         return true;
     }
 
-    //numTrue > 1
-    undef->must_fix = true;
-    assert(numTrue > 1);
+    assert(numTrue_can_be_unset > 1);
+    undef->must_fix_at_least_one_var = true;
     for (const Lit l: *c) {
         if (model_value(l) == l_True)
             undef->satisfies[l.var()]++;
@@ -3543,10 +3559,11 @@ bool Solver::undef_look_at_one_clause(const C c)
     return false;
 }
 
-bool Solver::undef_check_must_fix()
+bool Solver::undef_must_fix_var()
 {
-    undef->must_fix = false;
+    undef->must_fix_at_least_one_var = false;
 
+    //Long clauses
     for (uint32_t i = 0
          ; i < longIrredCls.size()
          ; i++
@@ -3555,17 +3572,16 @@ bool Solver::undef_check_must_fix()
             continue;
 
         Clause* c = cl_alloc.ptr(longIrredCls[i]);
-        if (undef_look_at_one_clause(c)) {
+        if (undef_clause_surely_satisfied(c)) {
             //clause definitely satisfied
             undef->dontLookAtClause[i] = true;
         }
     }
 
+    //Binary clauses
     for(size_t i = 0; i < nVars()*2; i++) {
         const Lit l = Lit::toLit(i);
-        if (!undef->can_be_unset[l.var()]
-            && model_value(l) == l_True
-        ) {
+        if (!undef->can_be_unset[l.var()] && model_value(l) == l_True) {
             continue;
         }
         for(const Watched& w: watches[l]) {
@@ -3575,11 +3591,11 @@ bool Solver::undef_check_must_fix()
                 std::array<Lit, 2> c;
                 c[0] = l;
                 c[1] = w.lit2();
-                undef_look_at_one_clause(&c);
+                undef_clause_surely_satisfied(&c);
             }
         }
     }
 
     //There is hope
-    return undef->must_fix;
+    return undef->must_fix_at_least_one_var;
 }

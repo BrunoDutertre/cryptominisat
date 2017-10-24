@@ -12,37 +12,9 @@ CREATE TABLE `reduceDB` (
   `restarts` bigint(20) NOT NULL,
   `conflicts` bigint(20) NOT NULL,
   `runtime` float NOT NULL,
-  `reduceDBs` int(20) NOT NULL,
-  `irredClsVisited` bigint(20) NOT NULL,
-  `irredLitsVisited` bigint(20) NOT NULL,
-  `redClsVisited` bigint(20) NOT NULL,
-  `redLitsVisited` bigint(20) NOT NULL,
-  `removedNum` int(20) NOT NULL,
-  `removedLits` bigint(20) NOT NULL,
-  `removedGlue` bigint(20) NOT NULL,
-  `removedResolBinIrred` bigint(20) NOT NULL,
-  `removedResolBinRed` bigint(20) NOT NULL,
-  `removedResolLIrred` bigint(20) NOT NULL,
-  `removedResolLRed` bigint(20) NOT NULL,
-  `removedAge` bigint(20) NOT NULL,
-  `removedLitVisited` bigint(20) NOT NULL,
-  `removedProp` bigint(20) NOT NULL,
-  `removedConfl` bigint(20) NOT NULL,
-  `removedLookedAt` bigint(20) NOT NULL,
-  `removedUsedUIP` bigint(20) NOT NULL,
-  `remainNum` int(20) NOT NULL,
-  `remainLits` bigint(20) NOT NULL,
-  `remainGlue` bigint(20) NOT NULL,
-  `remainResolBinIrred` bigint(20) NOT NULL,
-  `remainResolBinRed` bigint(20) NOT NULL,
-  `remainResolLIrred` bigint(20) NOT NULL,
-  `remainResolLRed` bigint(20) NOT NULL,
-  `remainAge` bigint(20) NOT NULL,
-  `remainLitVisited` bigint(20) NOT NULL,
-  `remainProp` bigint(20) NOT NULL,
-  `remainConfl` bigint(20) NOT NULL,
-  `remainLookedAt` bigint(20) NOT NULL,
-  `remainUsedUIP` bigint(20) NOT NULL
+  `level` int(20) NOT NULL,
+  `numReduceDBs` int(20) NOT NULL,
+  `numRemoved` int(20) NOT NULL
 );
 
 DROP TABLE IF EXISTS `restart`;
@@ -139,7 +111,8 @@ CREATE TABLE `memused` (
 DROP TABLE IF EXISTS `solverRun`;
 CREATE TABLE `solverRun` (
   `runID` bigint(20) NOT NULL,
-  `runtime` bigint(20) NOT NULL
+  `runtime` bigint(20) NOT NULL,
+  `gitrev` varchar(100) NOT NULL
 );
 
 DROP TABLE IF EXISTS `startup`;
@@ -160,6 +133,7 @@ CREATE TABLE `clauseStats` (
   `runID` bigint(20) NOT NULL,
   `simplifications` int(20) NOT NULL,
   `restarts` bigint(20) NOT NULL,
+  `prev_restart` bigint(20) NOT NULL,
   `conflicts` bigint(20) NOT NULL,
   `clauseID` bigint(20) NOT NULL,
 
@@ -181,6 +155,7 @@ CREATE TABLE `clauseStats` (
 
   `vsids_vars_avg` double NOT NULL,
   `vsids_vars_var` double NOT NULL,
+  `vsids_vars_min` double NOT NULL,
   `vsids_vars_max` double NOT NULL,
 
   `antecedents_glue_long_reds_avg` float NOT NULL,

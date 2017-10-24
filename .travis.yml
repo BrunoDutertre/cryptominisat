@@ -1,18 +1,27 @@
 language: cpp
+cache: ccache
+
 compiler:
   - gcc
-  # -clang
+  - clang
 
 os:
   - linux
-#  - osx
+  - osx
+
+dist: trusty
+
+# not container-based
+sudo: required
 
 env:
   global:
     - secure: SodOHkeIggfLhzWD2kxbmHWcbqhOZzL5/5RFxUH+wPtj4VArxeTWCklSAn5BjrSZN9ljVf+lArt4L238odotLhCa9UXjvuPOFVQ+nAGw7XNjso/ccu1ce9cClv+Dzlc8NVJx0tApGZqJjscYesfw/Ij2fN21iwk/U736E08ya9I=
     - secure: "iWvQPW/6x5CM0rxK37gdbGBbjr2EhVeTPlWT9AfM9mXOnRz76ANq3O4xVmBw0KbfLExBOu8wNyzDf07NMBWzKNyyj0fBWzLVoToLF/R9PYkiiqYT2DWtT/iawf3uXhQKMUN9zfQNULtN6DrWIZXpBkHRDuQjNkNu6mXExkFdEcc="
+
   matrix:
     - CMS_CONFIG=NORMAL
+    - CMS_CONFIG=LARGEMEM_GAUSS
     - CMS_CONFIG=ONLY_SIMPLE
     - CMS_CONFIG=STATS
     - CMS_CONFIG=NOZLIB
@@ -21,16 +30,58 @@ env:
     - CMS_CONFIG=NOPYTHON
     - CMS_CONFIG=SQLITE
     - CMS_CONFIG=M4RI
-#    - CMS_CONFIG=WEB
     - CMS_CONFIG=GAUSS
     - CMS_CONFIG=COVERAGE
     - CMS_CONFIG=SLOW_DEBUG
     - CMS_CONFIG=INTREE_BUILD
     - CMS_CONFIG=NOTEST
-    # - CMS_CONFIG=STATIC_BIN
-    # - CMS_CONFIG=ONLY_SIMPLE_STATIC
+    - CMS_CONFIG=STATIC
+    - CMS_CONFIG=ONLY_SIMPLE_STATIC
 
 matrix:
+  exclude:
+    - os: osx
+      compiler: gcc
+
+    # COVERAGE scan should only run once
+    - compiler: clang
+      env: CMS_CONFIG=COVERAGE
+
+    - compiler: clang
+      env: CMS_CONFIG=STATS
+
+    - compiler: clang
+      env: CMS_CONFIG=SLOW_DEBUG
+
+    - compiler: clang
+      env: CMS_CONFIG=NOPYTHON
+
+    - compiler: clang
+      env: CMS_CONFIG=NOTEST
+
+      #####
+    - os: osx
+      env: CMS_CONFIG=STATS
+
+    - os: osx
+      env: CMS_CONFIG=SLOW_DEBUG
+
+    - os: osx
+      env: CMS_CONFIG=NOTEST
+
+    - os: osx
+      env: CMS_CONFIG=COVERAGE
+
+    - os: osx
+      env: CMS_CONFIG=NOSQLITE
+
+    - os: osx
+      env: CMS_CONFIG=NOZLIB
+
+    - os: osx
+      env: CMS_CONFIG=LARGEMEM_GAUSS
+
+
   include:
     # Covertiy scan should only run once
     - os: linux
@@ -52,24 +103,17 @@ addons:
     branch_pattern: coverity_scan
 
 before_install:
-  - sudo add-apt-repository -y ppa:ubuntu-sdk-team/ppa
-  - sudo add-apt-repository -y ppa:george-edison55/gcc4.7-precise
-  - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-  - sudo add-apt-repository -y ppa:kalakris/cmake
-  - sudo add-apt-repository -y "deb http://archive.ubuntu.com/ubuntu trusty-backports main universe"
-  - sudo apt-get update
+  - if [[ "$TRAVIS_OS_NAME" == "osx"   ]]; then brew update; fi
+  # - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo add-apt-repository "deb http://archive.ubuntu.com/ubuntu/ trusty-updates"; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -y --force-yes libboost-test-dev; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -y --force-yes cmake3; fi
 
 install:
-  - sudo apt-get install -y --force-yes libboost-test-dev gcc-4.7 g++-4.7
-  - sudo apt-get remove -y --force-yes  g++-4.6 gcc-4.6
-  - sudo apt-get install -y --force-yes cmake valgrind swig3.0
-  - sudo pip install lit
+#cmake
+  #- if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./scripts/travis-install-cmake.sh; fi
 #coveralls
-  - sudo pip install cpp-coveralls
-  - wget http://ftp.de.debian.org/debian/pool/main/l/lcov/lcov_1.11.orig.tar.gz
-  - tar xf lcov_1.11.orig.tar.gz
-  - sudo make -C lcov-1.11/ install
-  - gem install coveralls-lcov
+  - if [[ "$CMS_CONFIG" == "COVERAGE" ]]; then ./scripts/travis-install-lcov.sh; fi
 #lingeling
   - git clone https://github.com/msoos/lingeling-ala
   - cd lingeling-ala
@@ -77,12 +121,12 @@ install:
   - make
   - sudo cp lingeling /usr/local/bin/
   - cd ..
-#drat
-  - git clone https://github.com/msoos/drat
-  - cd drat
-  - make
-  - sudo cp drat-trim /usr/local/bin/
-  - cd ..
+# lit
+    # NOTE we probably should NOT use 'sudo' because Travis uses virtualenvs
+  - sudo -H pip install --upgrade pip
+  - sudo -H pip install lit
+  - lit --version
+  - which lit
 #submodules
   - git submodule init
   - git submodule update

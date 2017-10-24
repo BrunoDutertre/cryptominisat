@@ -45,9 +45,9 @@ struct MySolver {
         solver = new SATSolver;
     }
 
+    SATSolver* solver;
     vector<Lit> clause;
     vector<Lit> assumptions;
-    SATSolver* solver;
 };
 
 extern "C" {
@@ -174,11 +174,17 @@ DLL_PUBLIC int ipasir_solve (void * solver)
 DLL_PUBLIC int ipasir_val (void * solver, int lit)
 {
     MySolver* s = (MySolver*)solver;
+    assert(s->solver->okay());
 
-    const int a = std::abs(lit)-1;
-    const bool flip = lit < 0;
-
-    return (s->solver->get_model()[a] == l_True) ^ flip;
+    const uint32_t var = std::abs(lit)-1;
+    lbool val = s->solver->get_model()[var];
+    if (val == l_Undef) {
+        return 0;
+    }
+    if (val == l_False) {
+        lit = -1*lit;
+    }
+    return lit;
 }
 
 /**
@@ -198,8 +204,8 @@ DLL_PUBLIC int ipasir_failed (void * solver, int lit)
     const vector<Lit>& confl = s->solver->get_conflict();
     const Lit tofind(std::abs(lit)-1, lit < 0);
 
-    for(const Lit lit: confl) {
-        if (lit == tofind) {
+    for(const Lit l: confl) {
+        if (l == tofind) {
             return true;
         }
     }
@@ -219,10 +225,14 @@ DLL_PUBLIC int ipasir_failed (void * solver, int lit)
  * Required state: INPUT or SAT or UNSAT
  * State after: INPUT or SAT or UNSAT
  */
-DLL_PUBLIC void ipasir_set_terminate (void * /*solver*/, void * /*state*/, int (*terminate)(void * state))
+DLL_PUBLIC void ipasir_set_terminate (void * /*solver*/, void * /*state*/, int (* /*terminate*/)(void * state))
 {
     //this is complicated.
 }
 
 }
 
+DLL_PUBLIC void ipasir_set_learn (void * /*solver*/, void * /*state*/, int /*max_length*/, void (* /*learn*/)(void * state, int * clause))
+{
+    //this is complicated
+}

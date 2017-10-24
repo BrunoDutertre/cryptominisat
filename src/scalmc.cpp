@@ -49,7 +49,7 @@
 #include <string.h>
 #include <list>
 #include <array>
-#include <cmath>
+#include <complex>
 
 #include "scalmc.h"
 #include "time_mem.h"
@@ -183,10 +183,10 @@ bool CUSP::AddHash(uint32_t num_xor_cls, vector<Lit>& assumps)
 
         vars.clear();
         vars.push_back(act_var);
-        rhs = (randomBits[(independent_vars.size() + 1) * i] == 1);
+        rhs = (randomBits[(independent_vars.size() + 1) * i] == '1');
 
         for (uint32_t j = 0; j < independent_vars.size(); j++) {
-            if (randomBits[(independent_vars.size() + 1) * i + j] == '1') {
+            if (randomBits[(independent_vars.size() + 1) * i + j+1] == '1') {
                 vars.push_back(independent_vars[j]);
             }
         }
@@ -555,7 +555,7 @@ bool CUSP::ScalApproxMC(SATCount& count)
                 }
                 succRecord[hashCount] = 0;
                 countRecord[hashCount] = currentNumSolutions;
-                if (abs(hashCount-mPrev) <= 2 && mPrev != 0) {
+                if (std::abs<int64_t>((int64_t)hashCount - (int64_t)mPrev) <= 2 && mPrev != 0) {
                     upperFib = hashCount;
                     hashCount--;
                 } else {
@@ -581,7 +581,7 @@ bool CUSP::ScalApproxMC(SATCount& count)
                     break;
                 }
                 succRecord[hashCount] = 1;
-                if (abs(hashCount - mPrev) < 2 && mPrev!=0) {
+                if (std::abs<int64_t>((int64_t)hashCount - (int64_t)mPrev) < 2 && mPrev!=0) {
                     lowerFib = hashCount;
                     hashCount ++;
                 } else if (lowerFib + (hashCount - lowerFib)*2 >= upperFib-1) {

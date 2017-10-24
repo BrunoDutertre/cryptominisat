@@ -124,9 +124,10 @@ bool SQLiteStats::tryIDInSQL(const Solver* solver)
 {
     std::stringstream ss;
     ss
-    << "INSERT INTO solverRun (runID, `runtime`) values ("
+    << "INSERT INTO solverRun (runID, `runtime`, `gitrev`) values ("
     << runID
     << ", " << time(NULL)
+    << ", '" << solver->get_version_sha1() << "'"
     << ");";
 
     //Inserting element into solverruns to get unique ID
@@ -620,33 +621,17 @@ void SQLiteStats::restart(
 //Prepare statement for restart
 void SQLiteStats::initReduceDBSTMT()
 {
-    const size_t numElems = 36;
+    const size_t numElems = 8;
 
     std::stringstream ss;
     ss << "insert into `reduceDB`"
     << "("
     //Position
     << "  `runID`, `simplifications`, `restarts`, `conflicts`, `runtime`"
-    << ", `reduceDBs`"
+    << ", `level`"
 
     //Actual data
-    << ", `irredClsVisited`, `irredLitsVisited`"
-    << ", `redClsVisited`, `redLitsVisited`"
-
-    //Clean data
-    << ", removedNum, removedLits, removedGlue"
-    << ", removedResolBinIrred, removedResolBinRed"
-    << ", removedResolLIrred, removedResolLRed"
-    << ", removedAge"
-    << ", removedLitVisited, removedProp, removedConfl"
-    << ", removedLookedAt, removedUsedUIP"
-
-    << ", remainNum, remainLits, remainGlue"
-    << ", remainResolBinIrred, remainResolBinRed"
-    << ", remainResolLIrred, remainResolLRed"
-    << ", remainAge"
-    << ", remainLitVisited, remainProp, remainConfl"
-    << ", remainLookedAt, remainUsedUIP"
+    << ", `numReduceDBs`, `numRemoved`"
     << ") values ";
     writeQuestionMarks(
         numElems
@@ -669,9 +654,9 @@ void SQLiteStats::initReduceDBSTMT()
 }
 
 void SQLiteStats::reduceDB(
-    const ClauseUsageStats& irredStats
-    , const ClauseUsageStats& redStats
-    , const CleaningStats& clean
+    uint64_t level
+    , uint64_t num_cleans
+    , uint64_t num_removed
     , const Solver* solver
 ) {
 
@@ -681,53 +666,9 @@ void SQLiteStats::reduceDB(
     sqlite3_bind_int64(stmtReduceDB, bindAt++, solver->sumRestarts());
     sqlite3_bind_int64(stmtReduceDB, bindAt++, solver->sumConflicts);
     sqlite3_bind_double(stmtReduceDB, bindAt++, cpuTime());
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, solver->reduceDB->get_nbReduceDB());
-
-    //Clause data for IRRED
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, irredStats.sumLookedAt);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, 0);
-
-    //Clause data for RED
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, redStats.sumLookedAt);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, 0);
-
-    //removed
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.num);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.lits);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.glue);
-
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.antec_data.binIrred);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.antec_data.binRed);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.antec_data.longIrred);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.antec_data.longRed);
-
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.age);
-
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, 0);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.numProp);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.numConfl);
-
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.numLookedAt);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.removed.used_for_uip_creation);
-
-    //remain
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.num);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.lits);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.glue);
-
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.antec_data.binIrred);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.antec_data.binRed);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.antec_data.longIrred);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.antec_data.longRed);
-
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.age);
-
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, 0);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.numProp);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.numConfl);
-
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.numLookedAt);
-    sqlite3_bind_int64(stmtReduceDB, bindAt++, clean.remain.used_for_uip_creation);
+    sqlite3_bind_int64(stmtReduceDB, bindAt++, level);
+    sqlite3_bind_int64(stmtReduceDB, bindAt++, num_cleans);
+    sqlite3_bind_int64(stmtReduceDB, bindAt++, num_removed);
 
     int rc = sqlite3_step(stmtReduceDB);
     if (rc != SQLITE_DONE) {
@@ -754,7 +695,7 @@ void SQLiteStats::reduceDB(
 
 void SQLiteStats::init_clause_stats_STMT()
 {
-    const size_t numElems = 45;
+    const size_t numElems = 47;
 
     std::stringstream ss;
     ss << "insert into `clauseStats`"
@@ -762,6 +703,7 @@ void SQLiteStats::init_clause_stats_STMT()
     << " `runID`,"
     << " `simplifications`,"
     << " `restarts`,"
+    << " `prev_restart`,"
     << " `conflicts`,"
     << " `clauseID`,"
     << ""
@@ -783,6 +725,7 @@ void SQLiteStats::init_clause_stats_STMT()
 
     << " `vsids_vars_avg`,"
     << " `vsids_vars_var`,"
+    << " `vsids_vars_min`,"
     << " `vsids_vars_max`,"
 
     << " `antecedents_glue_long_reds_avg`,"
@@ -853,6 +796,11 @@ void SQLiteStats::dump_clause_stats(
     sqlite3_bind_int64(stmt_clause_stats, bindAt++, runID);
     sqlite3_bind_int64(stmt_clause_stats, bindAt++, solver->get_solve_stats().numSimplify);
     sqlite3_bind_int64(stmt_clause_stats, bindAt++, solver->sumRestarts());
+    if (solver->sumRestarts() == 0) {
+        sqlite3_bind_int64(stmt_clause_stats, bindAt++, 0);
+    } else {
+        sqlite3_bind_int64(stmt_clause_stats, bindAt++, solver->sumRestarts()-1);
+    }
     sqlite3_bind_int64(stmt_clause_stats, bindAt++, solver->sumConflicts);
     sqlite3_bind_int64(stmt_clause_stats, bindAt++, clauseID);
 
@@ -880,6 +828,7 @@ void SQLiteStats::dump_clause_stats(
     sqlite3_bind_double(stmt_clause_stats, bindAt++, antec_data.glue_long_reds.avg());
     sqlite3_bind_double(stmt_clause_stats, bindAt++, antec_data.glue_long_reds.var());
     sqlite3_bind_int(stmt_clause_stats, bindAt++, antec_data.glue_long_reds.getMin());
+    sqlite3_bind_int(stmt_clause_stats, bindAt++, antec_data.glue_long_reds.getMax());
 
     sqlite3_bind_double(stmt_clause_stats, bindAt++, antec_data.age_long_reds.avg() );
     sqlite3_bind_double(stmt_clause_stats, bindAt++, antec_data.age_long_reds.var() );
@@ -903,7 +852,7 @@ void SQLiteStats::dump_clause_stats(
     sqlite3_bind_double(stmt_clause_stats, bindAt++, hist.trailDepthHistLT.avg());
     sqlite3_bind_double(stmt_clause_stats, bindAt++, hist.vsidsVarsAvgLT.avg());
     sqlite3_bind_double(stmt_clause_stats, bindAt++, hist.conflSizeHistLT.avg());
-    sqlite3_bind_double(stmt_clause_stats, bindAt++, hist.glueHistLT.avg());
+    sqlite3_bind_double(stmt_clause_stats, bindAt++, hist.glueHistLTAll.avg());
     sqlite3_bind_double(stmt_clause_stats, bindAt++, hist.numResolutionsHistLT.avg());
 
     int rc = sqlite3_step(stmt_clause_stats);

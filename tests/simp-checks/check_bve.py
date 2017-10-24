@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2014  Mate Soos
@@ -20,13 +20,12 @@
 
 from __future__ import print_function
 import os
-import glob
-import sys
 import optparse
 import subprocess
 import time
 import gzip
 import threading
+import glob
 
 
 class PlainHelpFormatter(optparse.IndentedHelpFormatter):
@@ -48,31 +47,22 @@ parser.add_option("--verbose", "-v", action="store_true", default=False,
                   dest="verbose", help="Print more output")
 parser.add_option("--threads", "-t", default=4, type=int,
                   dest="threads", help="Number of threads")
+parser.add_option("--minisat", type=str,
+                  dest="minisat_exe", help="MiniSat location")
+parser.add_option("--cms", type=str,
+                  dest="cms_exe", help="CryptoMiniSat location")
+
 
 (options, args) = parser.parse_args()
 print_lock = threading.Lock()
 todo_lock = threading.Lock()
 
 if len(args) < 1:
-    print("ERROR: You must call this script with at least one argument, the cryptominisat5 binary")
-    exit(-1)
-
-if len(args) < 2:
-    print("ERROR: You must call this script with at least one file to check")
-    exit(-1)
-
-cms4_exe = args[0]
-if not os.path.isfile(cms4_exe):
-    print("CryptoMiniSat executable you gave, '%s' is not a file. Exiting" % cms4_exe)
-    exit(-1)
-
-if not os.access(cms4_exe, os.X_OK):
-    print("CryptoMiniSat executable you gave, '%s' is not executable. Exiting." % cms4_exe)
+    print("ERROR: You must call this script with at least one argument, a file to check")
     exit(-1)
 
 
 def go_through_cnf(f):
-    maxvar = 0
     for line in f:
         line = line.strip()
         if len(line) == 0:
@@ -97,8 +87,6 @@ def find_num_vars(fname):
 
     return maxvar
 
-
-minisat_exe = os.getcwd() + "/minisat/build/release/bin/minisat"
 todo = []
 exitnum = 0
 
@@ -141,7 +129,7 @@ class MyThread(threading.Thread):
 
         toprint = ""
 
-        toexec = [cms4_exe, "--zero-exit-status", "--preproc", "1", "--verb", "0"]
+        toexec = [options.cms_exe, "--zero-exit-status", "--preproc", "1", "--verb", "0"]
         toexec.extend(self.extraopts)
         toexec.extend([fname, simp_fname])
 
@@ -153,28 +141,27 @@ class MyThread(threading.Thread):
             with open(cms_out_fname, "w") as f:
                 subprocess.check_call(" ".join(toexec), stdout=f, shell=True)
         except subprocess.CalledProcessError:
-            # memory out????
             toprint += "*** ERROR CryptoMiniSat errored out!\n"
             with print_lock:
                 print(toprint)
-            return 1
+            exit(-1)
+            return -1
         t_cms = time.time()-start
         num_vars_after_cms_preproc = find_num_vars(simp_fname)
 
         start = time.time()
-        toexec = [minisat_exe, fname]
+        toexec = [options.minisat_exe, fname]
         toprint += "Executing: %s\n" % toexec
         minisat_out_fname = "minisat_elim_data.out-%d" % self.threadID
         try:
             with open(minisat_out_fname, "w") as f:
                 subprocess.check_call(" ".join(toexec), stdout=f, shell=True)
         except subprocess.CalledProcessError:
-            # probably solved it
-            # can't really test.
             toprint += "** Minisat errored out...\n"
             with print_lock:
                 print(toprint)
-            return 0
+            exit(-1)
+            return -1
         t_msat = time.time()-start
 
         var_elimed = None
@@ -195,7 +182,7 @@ class MyThread(threading.Thread):
         toprint += "-> T-msat: %-4.2f free vars after: %-9d\n" % (t_msat, num_vars_after_ms_preproc)
         diff = num_vars_after_cms_preproc - num_vars_after_ms_preproc
         limit = float(orig_num_vars)*0.05
-        if diff < limit*8 and t_msat > t_cms*3 and t_msat > 20:
+        if diff < limit*8 and t_msat > t_cms*4 and t_msat > 20:
             toprint += " * MiniSat didn't timeout, but we did, acceptable difference.\n"
             return 0
 
@@ -217,9 +204,12 @@ class MyThread(threading.Thread):
 
 
 def test(extraopts):
+    global exitnum
     exitnum = 0
     global todo
-    todo = args[1:]
+    assert os.path.isdir(args[0])
+    path = os.path.join(args[0], '')
+    todo = glob.glob(path+"/*.cnf.gz")
 
     threads = []
     for i in range(options.threads):
@@ -233,12 +223,12 @@ def test(extraopts):
 
     if exitnum == 0:
         print("ALL PASSED")
-        subprocess.check_call("rm *.out", shell=True)
     else:
         print("SOME CHECKS FAILED")
 
     return exitnum
 
-test(["--preschedule", "occ-bve,must-renumber"])
-
-exit(exitnum)
+if __name__ == "__main__":
+    test(["--preschedule", "occ-bve,must-renumber"])
+    if exitnum != 0:
+        exit(exitnum)

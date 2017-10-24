@@ -1,30 +1,38 @@
 #
 # CryptoMiniSat
 #
-# Copyright (c) 2009-2014, Mate Soos. All rights reserved.
+# Copyright (c) 2009-2017, Mate Soos. All rights reserved.
+# Copyright (c) 2017, Pierre Vignet
 #
-#Permission is hereby granted, free of charge, to any person obtaining a copy
-#of this software and associated documentation files (the "Software"), to deal
-#in the Software without restriction, including without limitation the rights
-#to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-#copies of the Software, and to permit persons to whom the Software is
-#furnished to do so, subject to the following conditions:
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
 #
-#The above copyright notice and this permission notice shall be included in
-#all copies or substantial portions of the Software.
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
 #
-#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-#AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-#OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-#THE SOFTWARE.
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
 
 
 import sys
+import os
 from distutils.core import setup, Extension
 from distutils import sysconfig
+from distutils.cmd import Command
+
+__PACKAGE_VERSION__ = "0.2.0"
+__LIBRARY_VERSION__ = "${CMS_FULL_VERSION}"
+os.environ["CC"] = "${CMAKE_C_COMPILER}"
+os.environ["CXX"] = "${CMAKE_CXX_COMPILER}"
 
 cconf = """${PY_C_CONFIG}""".split(" ")
 ldconf = """${PY_LD_CONFIG}""".split(" ")
@@ -77,12 +85,42 @@ def _init_posix(init):
 
 sysconfig._init_posix = _init_posix(sysconfig._init_posix)
 
+################################################################################
+
+class TestCommand(Command):
+    """Call tests with the custom 'python setup.py test' command."""
+
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+
+        import os
+        import glob
+        print("our CWD is:", os.getcwd(), "files here: ", glob.glob("*"))
+        sys.path.append(os.getcwd())
+        path2 = os.path.join(os.getcwd(), "..")
+        path2 = os.path.join(path2, "lib")
+        path2 = os.path.normpath(path2)
+        print("path2 is:", path2)
+        sys.path.append(path2)
+        print("our sys.path is", sys.path)
+
+        import tests as tp
+        tp.run()
+
+
 __version__ = '@PROJECT_VERSION@'
 
-ext_kwds = dict(
+modules = dict(
     name = "pycryptosat",
-    sources = ["${CMAKE_CURRENT_SOURCE_DIR}/pycryptosat.cpp"],
-    define_macros = [],
+    sources = ["${CMAKE_CURRENT_SOURCE_DIR}/src/pycryptosat.cpp"],
+    define_macros = [('LIBRARY_VERSION', '"' + __LIBRARY_VERSION__ + '"')],
     extra_compile_args = cconf + ['-I${PROJECT_SOURCE_DIR}', '-I${PROJECT_BINARY_DIR}/cmsat5-src'],
     extra_link_args = ldconf,
     language = "c++",
@@ -92,24 +130,30 @@ ext_kwds = dict(
 
 setup(
     name = "pycryptosat",
-    version = __version__,
+    version = __PACKAGE_VERSION__,
     author = "Mate Soos",
     author_email = "soos.mate@gmail.com",
     url = "https://github.com/msoos/cryptominisat",
-    license = "LGPLv2",
+    license = "MIT",
     classifiers = [
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "Operating System :: OS Independent",
         "Programming Language :: C++",
         "Programming Language :: Python :: 2",
-        "Programming Language :: Python :: 2.5",
-        "Programming Language :: Python :: 2.6",
         "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.5",
+        "License :: OSI Approved :: MIT License",
         "Topic :: Utilities",
     ],
-    ext_modules = [Extension(**ext_kwds)],
+    ext_modules =  [Extension(**modules)],
+    description = "Bindings to CryptoMiniSat {} (a SAT solver)".\
+        format(__LIBRARY_VERSION__),
     py_modules = ['pycryptosat'],
-    description = "bindings to CryptoMiniSat (a SAT solver)",
     long_description = open('${CMAKE_CURRENT_SOURCE_DIR}/README.rst').read(),
+    cmdclass={
+        'test': TestCommand
+    }
+
 )

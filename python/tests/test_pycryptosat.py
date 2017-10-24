@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # CryptoMiniSat
 #
@@ -19,17 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+from __future__ import unicode_literals
+from __future__ import print_function
 import sys
-import copy
-import random
-from os.path import basename
 import unittest
-
-import os
-import glob
-print "our CWD is:", os.getcwd(), "files here: ", glob.glob("*")
-sys.path.append(os.getcwd())
-print "our sys.path is", sys.path
 
 
 import pycryptosat
@@ -164,7 +158,7 @@ class TestSolve(unittest.TestCase):
         self.assertRaises(ValueError, self.solver.add_clause, [1, 0])
 
     def test_no_clauses(self):
-        for n in range(7):
+        for _ in range(7):
             self.assertEqual(self.solver.solve([]), (True, (None,)))
 
     def test_cnf1(self):
@@ -194,7 +188,7 @@ class TestSolve(unittest.TestCase):
         self.assertTrue(check_solution(clauses3, solution))
 
     def test_cnf1_confl_limit(self):
-        for lim in range(1, 20):
+        for _ in range(1, 20):
             self.setUp()
             for cl in clauses1:
                 self.solver.add_clause(cl)
