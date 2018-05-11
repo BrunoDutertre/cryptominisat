@@ -78,32 +78,37 @@ typedef struct {
     SATSolver* cmsat;
 } Solver;
 
-static PyObject *outofconflerr = NULL;
-
 static const char solver_create_docstring[] = \
-"Solver(verbose=0, confl_limit=max_numeric_limits, threads=1)\n\
+"Solver(verbose=0, time_limit=max_numeric_limits, confl_limit=max_numeric_limits, threads=1)\n\
 Create Solver object.\n\
 \n\
 :param verbose: Verbosity level: 0: nothing printed; 15: very verbose.\n\
+:param time_limit: Propagation limit: abort after this many seconds has elapsed.\n\
 :param confl_limit: Propagation limit: abort after this many conflicts.\n\
     Default: never abort.\n\
 :param threads: Number of threads to use.\n\
 :type verbose: <int>\n\
-:type confl_limit: <int>\n\
+:type time_limit: <double>\n\
+:type confl_limit: <long>\n\
 :type threads: <int>";
 
 static SATSolver* setup_solver(PyObject *args, PyObject *kwds)
 {
-    static char* kwlist[] = {"verbose", "confl_limit", "threads", NULL};
+    static char* kwlist[] = {"verbose", "time_limit", "confl_limit", "threads", NULL};
 
     int verbose = 0;
     int num_threads = 1;
+    double time_limit = std::numeric_limits<double>::max();
     long confl_limit = std::numeric_limits<long>::max();
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ili", kwlist, &verbose, &confl_limit, &num_threads)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|idli", kwlist, &verbose, &time_limit, &confl_limit, &num_threads)) {
         return NULL;
     }
     if (verbose < 0) {
         PyErr_SetString(PyExc_ValueError, "verbosity must be at least 0");
+        return NULL;
+    }
+    if (time_limit < 0) {
+        PyErr_SetString(PyExc_ValueError, "time_limit must be at least 0");
         return NULL;
     }
     if (confl_limit < 0) {
@@ -116,6 +121,7 @@ static SATSolver* setup_solver(PyObject *args, PyObject *kwds)
     }
 
     SATSolver *cmsat = new SATSolver;
+    cmsat->set_max_time(time_limit);
     cmsat->set_max_confl(confl_limit);
     cmsat->set_verbosity(verbose);
     cmsat->set_num_threads(num_threads);
@@ -340,12 +346,7 @@ static PyObject* get_solution(SATSolver *cmsat)
     }
 
     Py_INCREF(Py_None);
-    // no error checking
-    if (PyTuple_SET_ITEM(tuple, (Py_ssize_t)0, Py_None) < 0) {
-        PyErr_SetString(PyExc_SystemError, "failed to add 1st element to tuple");
-        Py_DECREF(tuple);
-        return NULL;
-    }
+    PyTuple_SET_ITEM(tuple, (Py_ssize_t)0, Py_None);
 
     PyObject *py_value = NULL;
     lbool v;
@@ -363,13 +364,7 @@ static PyObject* get_solution(SATSolver *cmsat)
             assert((v == l_False) || (v == l_True) || (v == l_Undef));
         }
         Py_INCREF(py_value);
-
-        // no error checking
-        if (PyTuple_SET_ITEM(tuple, (Py_ssize_t)i+1, py_value) < 0) {
-            PyErr_SetString(PyExc_SystemError, "failed to add to tuple");
-            Py_DECREF(tuple);
-            return NULL;
-        }
+        PyTuple_SET_ITEM(tuple, (Py_ssize_t)i+1, py_value);
     }
     return tuple;
 }
@@ -399,12 +394,7 @@ static PyObject* get_raw_solution(SATSolver *cmsat) {
             py_value = PyInt_FromLong((var + 1) * sign);
             #endif
 
-            // no error checking
-            if (PyTuple_SET_ITEM(tuple, (Py_ssize_t)var, py_value) < 0) {
-                PyErr_SetString(PyExc_SystemError, "failed to add to tuple");
-                Py_DECREF(tuple);
-                return NULL;
-            }
+            PyTuple_SET_ITEM(tuple, (Py_ssize_t)var, py_value);
         }
     }
     return tuple;
@@ -541,7 +531,6 @@ static PyObject* solve(Solver *self, PyObject *args, PyObject *kwds)
         }
         Py_INCREF(Py_True);
 
-        // no error checking
         PyTuple_SET_ITEM(result, 0, Py_True);
         PyTuple_SET_ITEM(result, 1, solution);
 
@@ -549,18 +538,20 @@ static PyObject* solve(Solver *self, PyObject *args, PyObject *kwds)
         Py_INCREF(Py_False);
         Py_INCREF(Py_None);
 
-        // no error checking
         PyTuple_SET_ITEM(result, 0, Py_False);
         PyTuple_SET_ITEM(result, 1, Py_None);
 
     } else if (res == l_Undef) {
-        Py_DECREF(result);
-        return PyErr_SetFromErrno(outofconflerr);
+        Py_INCREF(Py_None);
+        Py_INCREF(Py_None);
+
+        PyTuple_SET_ITEM(result, 0, Py_None);
+        PyTuple_SET_ITEM(result, 1, Py_None);
     } else {
         // res can only be l_False, l_True, l_Undef
         assert((res == l_False) || (res == l_True) || (res == l_Undef));
         Py_DECREF(result);
-        return NULL;
+        return PyErr_NewExceptionWithDoc("pycyrptosat.IllegalState", "Error Occured in CyrptoMiniSat", NULL, NULL);
     }
 
     return result;
@@ -588,7 +579,7 @@ static PyObject* is_satisfiable(Solver *self)
         Py_INCREF(Py_False);
         return Py_False;
     } else if (res == l_Undef) {
-        return PyErr_SetFromErrno(outofconflerr);
+        return Py_None;
     } else {
         // res can only be l_False, l_True, l_Undef
         assert((res == l_False) || (res == l_True) || (res == l_Undef));
@@ -910,16 +901,10 @@ MODULE_INIT_FUNC(pycryptosat)
     Py_INCREF(&pycryptosat_SolverType);
     PyModule_AddObject(m, "Solver", (PyObject *)&pycryptosat_SolverType);
     PyModule_AddObject(m, "__version__", PyUnicode_FromString(LIBRARY_VERSION));
-    if (!(outofconflerr = PyErr_NewExceptionWithDoc("_cadbiom.InternalError", "Unsupported error.", NULL, NULL))) {
-        goto error;
-    }
-    PyModule_AddObject(m, "OutOfConflicts",  outofconflerr);
-
-error:
 
     if (PyErr_Occurred())
     {
-        PyErr_SetString(PyExc_ImportError, "pycryptosat: init failed");
+        PyErr_SetString(PyExc_ImportError, "pycryptosat: initialisation failed");
         Py_DECREF(m);
         m = NULL;
     }

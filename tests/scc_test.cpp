@@ -23,6 +23,7 @@ THE SOFTWARE.
 #include "gtest/gtest.h"
 
 #include <fstream>
+#include <memory>
 
 #include "src/solver.h"
 #include "src/sccfinder.h"
@@ -35,7 +36,8 @@ TEST(scc_test, find_1)
     SolverConf conf;
     conf.doCache = false;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(2);
     s.add_clause_outer(str_to_cl("1, 2"));
     s.add_clause_outer(str_to_cl("-1, -2"));
@@ -50,7 +52,8 @@ TEST(scc_test, find_2)
     SolverConf conf;
     conf.doCache = false;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(4);
     s.add_clause_outer(str_to_cl("1, 2"));
     s.add_clause_outer(str_to_cl("-1, -2"));
@@ -60,7 +63,7 @@ TEST(scc_test, find_2)
 
     SCCFinder scc(&s);
     scc.performSCC();
-    EXPECT_EQ(scc.get_binxors().size(), 2);
+    EXPECT_EQ(scc.get_binxors().size(), 2U);
 }
 
 TEST(scc_test, find_circle_3)
@@ -68,7 +71,8 @@ TEST(scc_test, find_circle_3)
     SolverConf conf;
     conf.doCache = false;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(4);
     s.add_clause_outer(str_to_cl("1, -2"));
     s.add_clause_outer(str_to_cl("2, -3"));
@@ -76,7 +80,7 @@ TEST(scc_test, find_circle_3)
 
     SCCFinder scc(&s);
     scc.performSCC();
-    EXPECT_EQ(scc.get_binxors().size(), 3);
+    EXPECT_EQ(scc.get_binxors().size(), 3U);
 }
 
 TEST(scc_test, find_two_circle2_3)
@@ -84,7 +88,8 @@ TEST(scc_test, find_two_circle2_3)
     SolverConf conf;
     conf.doCache = false;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(6);
     s.add_clause_outer(str_to_cl("1, -2"));
     s.add_clause_outer(str_to_cl("2, -3"));
@@ -96,7 +101,7 @@ TEST(scc_test, find_two_circle2_3)
 
     SCCFinder scc(&s);
     scc.performSCC();
-    EXPECT_EQ(scc.get_binxors().size(), 6);
+    EXPECT_EQ(scc.get_binxors().size(), 6U);
 }
 
 TEST(scc_test, find_1_diff)
@@ -104,7 +109,8 @@ TEST(scc_test, find_1_diff)
     SolverConf conf;
     conf.doCache = false;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(2);
     s.add_clause_outer(str_to_cl("1, 2"));
     s.add_clause_outer(str_to_cl("-1, -2"));
@@ -112,7 +118,7 @@ TEST(scc_test, find_1_diff)
 
     SCCFinder scc(&s);
     scc.performSCC();
-    EXPECT_EQ(scc.get_binxors().size(), 1);
+    EXPECT_EQ(scc.get_binxors().size(), 1U);
 }
 
 TEST(scc_test, find_0)
@@ -120,7 +126,8 @@ TEST(scc_test, find_0)
     SolverConf conf;
     conf.doCache = false;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(4);
     s.add_clause_outer(str_to_cl("1, 2"));
     s.add_clause_outer(str_to_cl("1, -2"));
@@ -128,7 +135,7 @@ TEST(scc_test, find_0)
 
     SCCFinder scc(&s);
     scc.performSCC();
-    EXPECT_EQ(scc.get_binxors().size(), 0);
+    EXPECT_EQ(scc.get_binxors().size(), 0U);
 }
 
 
@@ -137,7 +144,8 @@ TEST(scc_test, limit_test4)
     SolverConf conf;
     conf.max_scc_depth = 4;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(4);
     s.add_clause_outer(str_to_cl("1, 2"));
     s.add_clause_outer(str_to_cl("-2, 3"));
@@ -145,7 +153,7 @@ TEST(scc_test, limit_test4)
 
     SCCFinder scc(&s);
     scc.performSCC();
-    EXPECT_EQ(scc.get_binxors().size(), 3);
+    EXPECT_EQ(scc.get_binxors().size(), 3U);
 }
 
 TEST(scc_test, limit_test3)
@@ -153,7 +161,8 @@ TEST(scc_test, limit_test3)
     SolverConf conf;
     conf.max_scc_depth = 3;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(4);
     s.add_clause_outer(str_to_cl("1, 2"));
     s.add_clause_outer(str_to_cl("-2, 3"));
@@ -161,7 +170,7 @@ TEST(scc_test, limit_test3)
 
     SCCFinder scc(&s);
     scc.performSCC();
-    EXPECT_EQ(scc.get_binxors().size(), 0);
+    EXPECT_EQ(scc.get_binxors().size(), 0U);
 }
 
 TEST(scc_test, limit_test2)
@@ -169,7 +178,8 @@ TEST(scc_test, limit_test2)
     SolverConf conf;
     conf.max_scc_depth = 2;
 
-    Solver s(&conf, new std::atomic<bool>(false));
+    std::unique_ptr<std::atomic<bool>> tmp(new std::atomic<bool>(false));
+    Solver s(&conf, tmp.get());
     s.new_vars(4);
     s.add_clause_outer(str_to_cl("1, 2"));
     s.add_clause_outer(str_to_cl("-2, 3"));
@@ -177,7 +187,7 @@ TEST(scc_test, limit_test2)
 
     SCCFinder scc(&s);
     scc.performSCC();
-    EXPECT_EQ(scc.get_binxors().size(), 0);
+    EXPECT_EQ(scc.get_binxors().size(), 0U);
 }
 
 int main(int argc, char **argv) {

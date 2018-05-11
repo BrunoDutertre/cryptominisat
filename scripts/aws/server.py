@@ -1,6 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# Copyright (C) 2018  Mate Soos
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2
+# of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
 from __future__ import print_function
 import os
 import socket
@@ -62,7 +79,10 @@ class Server (threading.Thread):
         self.files_finished = []
         self.files = {}
 
-        os.system("aws s3 cp s3://msoos-solve-data/solvers/%s . --region us-west-2" % options.cnf_list)
+        logging.info("Getting list of files %s", options.cnf_list)
+        key = boto.connect_s3().get_bucket("msoos-solve-data").get_key("solvers/" + options.cnf_list)
+        key.get_contents_to_filename(options.cnf_list)
+
         fnames = open(options.cnf_list, "r")
         logging.info("CNF list is file %s", options.cnf_list)
         num = 0
@@ -105,18 +125,19 @@ class Server (threading.Thread):
 
     def rename_files_to_final(self, files):
         for fnames in files:
-            logging.info("Renaming file %s to %s",
-                         fnames[0], fnames[1])
-            ret = os.system("aws s3 mv s3://%s/%s s3://%s/%s --region us-west-2" %
-                            (options.s3_bucket, fnames[0], options.s3_bucket,
-                             fnames[1]))
+            logging.info("Renaming file %s to %s", fnames[0], fnames[1])
+            ret = os.system("aws s3 mv s3://{bucket}/{origname} s3://{bucket}/{toname} --region {region}".format(
+                bucket=options.s3_bucket,
+                origname=fnames[0],
+                toname=fnames[1],
+                region=options.region))
             if ret:
                 logging.warn("Renaming file to final name failed!")
 
     def check_for_dead_files(self):
         this_time = time.time()
         files_to_remove_from_files_running = []
-        for file_num, starttime in self.files_running.iteritems():
+        for file_num, starttime in self.files_running.items():
             duration = this_time - starttime
             # print("* death check. running:" , file_num, " duration: ",
             # duration)
@@ -179,6 +200,7 @@ class Server (threading.Thread):
         tosend["noshutdown"] = options.noshutdown
         tosend["extra_opts"] = options.extra_opts
         tosend["drat"] = options.drat
+        tosend["region"] = options.region
 
         return tosend
 
@@ -348,12 +370,6 @@ So long and thanks for all the fish!
         exc_type, exc_value, exc_traceback = sys.exc_info()
         the_trace = traceback.format_exc().rstrip().replace("\n", " || ")
         logging.error("Cannot send email! Traceback: %s", the_trace)
-
-    # upload log
-    upload_log(options.s3_bucket,
-               full_s3_folder,
-               options.logfile_name,
-               "server-%s" % get_ip_address("eth0"))
 
     if not options.noshutdown:
         os.system(toexec)

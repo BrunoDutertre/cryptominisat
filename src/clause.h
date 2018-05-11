@@ -116,16 +116,11 @@ struct ClauseStats
 {
     ClauseStats()
     {
-        memset(this, 0, sizeof(ClauseStats));
-        #ifdef STATS_NEEDED
-        ID = 1;
-        #endif
-        which_red_array = 2;
         glue = 1000;
-        activity = 0;
+        which_red_array = 2;
+        activity = 1;
         ttl = 0;
-        marked_clause = 0;
-        last_touched = 0;
+        marked_clause = false;
     }
 
     //Stored data
@@ -133,10 +128,10 @@ struct ClauseStats
     uint32_t marked_clause:1;
     uint32_t ttl:2;
     uint32_t which_red_array:2;
-    float   activity = 0.0;
-    uint32_t last_touched;
+    float   activity = 1.0;
+    uint32_t last_touched = 0;
     #ifdef STATS_NEEDED
-    int64_t ID;
+    int64_t ID = 0;
     uint64_t introduced_at_conflict = 0; ///<At what conflict number the clause  was introduced
     uint64_t conflicts_made = 0; ///<Number of times caused conflict
     uint64_t sum_of_branch_depth_conflict = 0;
@@ -149,7 +144,7 @@ struct ClauseStats
     static ClauseStats combineStats(const ClauseStats& first, const ClauseStats& second)
     {
         //Create to-be-returned data
-        ClauseStats ret;
+        ClauseStats ret = first;
 
         //Combine stats
         ret.glue = std::min(first.glue, second.glue);
@@ -195,7 +190,7 @@ class Clause
 {
 public:
     uint16_t isRed:1; ///<Is the clause a redundant clause?
-    uint16_t isRemoved:1; ///<Is this clause queued for removal because of usless binary removal?
+    uint16_t isRemoved:1; ///<Is this clause queued for removal?
     uint16_t isFreed:1; ///<Has this clause been marked as freed by the ClauseAllocator ?
     uint16_t is_distilled:1;
     uint16_t occurLinked:1;
@@ -336,12 +331,16 @@ public:
     void makeIrred()
     {
         assert(isRed);
+        #if STATS_NEEDED
+        stats.ID = 0;
+        #endif
         isRed = false;
     }
 
-    void makeRed(const uint32_t newGlue)
+    void makeRed(const uint32_t newGlue, const double init_activity = 1.0)
     {
         stats.glue = newGlue;
+        stats.activity = init_activity;
         isRed = true;
     }
 

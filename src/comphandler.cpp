@@ -64,7 +64,7 @@ void CompHandler::new_var(const uint32_t orig_outer)
 
 void CompHandler::new_vars(size_t n)
 {
-    savedState.resize(savedState.size()+n, l_Undef);
+    savedState.insert(savedState.end(), n, l_Undef);
     assert(savedState.size() == solver->nVarsOuter());
 }
 
@@ -221,7 +221,9 @@ bool CompHandler::try_to_solve_component(
         assert(solver->value(var) == l_Undef);
     }
 
-    if (vars_orig.size() > 100ULL*1000ULL) {
+    if (vars_orig.size() > 100ULL*1000ULL*
+            solver->conf.var_and_mem_out_mult
+       ) {
         //There too many variables -- don't create a sub-solver
         //I'm afraid that we will memory-out
 

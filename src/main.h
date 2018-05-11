@@ -66,11 +66,9 @@ class Main
         string dratfilname;
         void check_options_correctness();
         void manually_parse_some_options();
-        void parse_var_elim_strategy();
         void handle_drat_option();
         void parse_restart_type();
         void parse_polarity_type();
-        void dumpIfNeeded() const;
         void check_num_threads_sanity(const unsigned thread_num) const;
 
         po::positional_options_description p;
@@ -80,12 +78,12 @@ class Main
         //Options
         po::variables_map vm;
         virtual void add_supported_options();
-        virtual void call_after_parse() {};
+        virtual void call_after_parse() {}
 
         po::options_description help_options_simple;
         po::options_description help_options_complicated;
         po::options_description hiddenOptions;
-        po::options_description generalOptions;
+        po::options_description generalOptions = po::options_description("Main options");
 
         SATSolver* solver = NULL;
 

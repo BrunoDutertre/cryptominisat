@@ -21,6 +21,7 @@ THE SOFTWARE.
 ***********************************************/
 
 #include "sqlstats.h"
+#include "solvefeatures.h"
 #include <sqlite3.h>
 
 namespace CMSat {
@@ -36,7 +37,8 @@ public:
     }
 
     void restart(
-        const PropStats& thisPropStats
+        const std::string& restart_type
+        , const PropStats& thisPropStats
         , const SearchStats& thisStats
         , const Solver* solver
         , const Searcher* searcher
@@ -63,6 +65,13 @@ public:
         , double time_passed
     ) override;
 
+
+    void features(
+        const Solver* solver
+        , const Searcher* search
+        , const SolveFeatures& feat
+    ) override;
+
     void mem_used(
         const Solver* solver
         , const string& name
@@ -80,7 +89,12 @@ public:
         , size_t decision_level
         , size_t trail_depth
         , uint64_t conflicts_this_restart
+        , const std::string& rest_type
         , const SearchHist& hist
+        , const double last_dec_var_act_0
+        , const double last_dec_var_act_1
+        , const double first_dec_var_act_0
+        , const double first_dec_var_act_1
     ) override;
 
     bool setup(const Solver* solver) override;
@@ -98,6 +112,7 @@ private:
     void initTimePassedSTMT();
     void initMemUsedSTMT();
     void init_clause_stats_STMT();
+    void init_features();
 
     void writeQuestionMarks(size_t num, std::stringstream& ss);
     void initReduceDBSTMT();
@@ -106,6 +121,7 @@ private:
     sqlite3_stmt *stmtMemUsed = NULL;
     sqlite3_stmt *stmtReduceDB = NULL;
     sqlite3_stmt *stmtRst = NULL;
+    sqlite3_stmt *stmtFeat = NULL;
     sqlite3_stmt *stmt_clause_stats = NULL;
 
     sqlite3 *db = NULL;

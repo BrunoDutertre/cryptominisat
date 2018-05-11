@@ -51,10 +51,9 @@ public:
 
     void open_file_and_write_unsat(const std::string& fname);
     void open_file_and_write_sat(const std::string& fname);
-
-    void open_file_and_dump_red_clauses(const std::string& redDumpFname);
-    void open_file_and_dump_irred_clauses(const std::string& irredDumpFname);
-    void open_file_and_dump_irred_clauses_preprocessor(const std::string& irredDumpFname);
+    void open_file_and_dump_irred_clauses_preprocessor(const std::string& fname);
+    void open_file_and_dump_irred_clauses(const std::string& fname);
+    void open_file_and_dump_red_clauses(const std::string& fname);
 
 
 private:
@@ -62,25 +61,25 @@ private:
     std::ofstream* outfile = NULL;
 
     void write_unsat_file();
-    void dump_irred_cls_for_preprocessor(bool backnumber);
+    void dump_irred_cls_for_preprocessor(bool outer_number);
     void open_dump_file(const std::string& filename);
-    void dumpBinClauses(
+    void dump_bin_cls(
         const bool dumpRed
         , const bool dumpIrred
-        , const bool backnumber
+        , const bool outer_number
     );
 
-    void dumpEquivalentLits();
-    void dumpUnitaryClauses();
-    void dumpRedClauses();
+    void dump_red_cls(bool outer_numbering);
+    void dump_eq_lits(bool outer_numbering);
+    void dump_unit_cls(bool outer_numbering);
+    void dump_blocked_clauses(bool outer_numbering);
+    void dump_irred_cls(bool outer_numbering);
+    void dump_component_clauses(bool outer_numbering);
+    void dump_vars_appearing_inverted(bool outer_numbering);
     void dump_clauses(
         const vector<ClOffset>& cls
-        , const bool backnumber
+        , const bool outer_number
     );
-
-    void dump_blocked_clauses();
-    void dump_component_clauses();
-    void dumpIrredClauses();
 
     vector<Lit> tmpCl;
 

@@ -74,7 +74,6 @@ Dest unwrap(const std::vector<T>& vec)
 }
 
 #define NOEXCEPT_START noexcept { try {
-
 #define NOEXCEPT_END } catch(...) { \
     std::cerr << "ERROR: exception thrown past FFI boundary" << std::endl;\
     std::exit(-1);\

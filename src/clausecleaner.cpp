@@ -77,7 +77,6 @@ void ClauseCleaner::clean_implicit_watchlist(
             *j++ = *i;
             continue;
         }
-        assert(!solver->drat->something_delayed());
 
         if (i->isBin()) {
             clean_binary_implicit(*i, j, lit);
@@ -89,7 +88,10 @@ void ClauseCleaner::clean_implicit_watchlist(
 
 void ClauseCleaner::clean_implicit_clauses()
 {
-    assert(!solver->drat->something_delayed());
+    if (solver->conf.verbosity > 15) {
+        cout << "c cleaning implicit clauses" << endl;
+    }
+
     assert(solver->decisionLevel() == 0);
     impl_data = ImplicitData();
     size_t wsLit = 0;
@@ -118,22 +120,14 @@ void ClauseCleaner::clean_implicit_clauses()
     #endif
 }
 
-void ClauseCleaner::clean_clauses(vector<ClOffset>& cs)
-{
-    clean_clauses_pre();
-    clean_clauses_inter(cs);
-    clean_clauses_post();
-}
-
 void ClauseCleaner::clean_clauses_inter(vector<ClOffset>& cs)
 {
-    assert(!solver->drat->something_delayed());
     assert(solver->decisionLevel() == 0);
     assert(solver->prop_at_head());
 
-    #ifdef VERBOSE_DEBUG
-    cout << "Cleaning  clauses" << endl;
-    #endif //VERBOSE_DEBUG
+    if (solver->conf.verbosity > 15) {
+        cout << "Cleaning clauses in vector<>" << endl;
+    }
 
     vector<ClOffset>::iterator s, ss, end;
     size_t at = 0;
@@ -170,7 +164,6 @@ void ClauseCleaner::clean_clauses_inter(vector<ClOffset>& cs)
 
 inline bool ClauseCleaner::clean_clause(Clause& cl)
 {
-    assert(!solver->drat->something_delayed());
     assert(cl.size() > 2);
     (*solver->drat) << deldelay << cl << fin;
 
@@ -198,7 +191,7 @@ inline bool ClauseCleaner::clean_clause(Clause& cl)
     }
     if (i != j) {
         cl.shrink(i-j);
-        (*solver->drat) << cl << fin << findelay;
+        (*solver->drat) << add << cl << fin << findelay;
     } else {
         solver->drat->forget_delay();
     }
@@ -299,7 +292,7 @@ void ClauseCleaner::remove_and_clean_all()
     }
     #endif
 
-    if (solver->conf.verbosity) {
+    if (solver->conf.verbosity >= 2) {
         cout
         << "c [clean] T: "
         << std::fixed << std::setprecision(4)

@@ -71,7 +71,7 @@ void printVersionInfo()
 void handle_drat_option(SolverConf& conf, const char* dratfilname)
 {
     std::ofstream* dratfTmp = new std::ofstream;
-    dratfTmp->open(dratfilname, std::ofstream::out);
+    dratfTmp->open(dratfilname, std::ofstream::out | std::ofstream::binary);
     if (!*dratfTmp) {
         std::cerr
         << "ERROR: Could not open DRAT file "
@@ -125,11 +125,11 @@ void printUsage(char** argv)
     cout << "USAGE:"
     << argv[0] << " [options] <input-file> \n\n  where input is plain DIMACS.\n\n";
     cout << "OPTIONS:\n\n";
-    cout << "  --verb          = [0...] Sets verbosity level. Anything higher\n";
-    cout << "                           than 2 will give debug log\n";
-    cout << "  --drat          = {0,1}  Sets whether DRAT should be dumped to\n";
-    cout << "                           the console as per SAT COMPETITION'14 guidelines\n";
-    cout << "  --threads       = [1...] Sets number of threads\n";
+    cout << "  --verb          = [0...]  Sets verbosity level. Anything higher\n";
+    cout << "                            than 2 will give debug log\n";
+    cout << "  --drat          = {fname} DRAT dumped to file\n";
+    cout << "  --gluebreak     = {0,1}   Break the glue-based restarts\n";
+    cout << "  --threads       = [1...]  Sets number of threads\n";
     cout << "\n";
 }
 
@@ -145,7 +145,7 @@ const char* hasPrefix(const char* str, const char* prefix)
 int main(int argc, char** argv)
 {
     SolverConf conf;
-    conf.verbosity = 2;
+    conf.verbosity = 1;
     dratf = NULL;
 
     int i, j;
@@ -167,6 +167,28 @@ int main(int argc, char** argv)
                 cout << "ERROR! illegal threads " << value << endl;
                 exit(0);
             }
+            if (num_threads > 16) {
+                conf.var_and_mem_out_mult *= 0.4;
+            }
+        }else if ((value = hasPrefix(argv[i], "--otherconf="))){
+            int otherconf  = (int)strtol(value, NULL, 10);
+            if (otherconf == 0 && errno == EINVAL){
+                cout << "ERROR! illegal threads " << value << endl;
+                exit(0);
+            }
+            if (otherconf == 1) {
+                cout << "c other conf set" << endl;
+                conf.intree_time_limitM = 1500;
+                conf.min_bva_gain = 64;
+                conf.ratio_glue_geom = 5;
+            }
+        }else if ((value = hasPrefix(argv[i], "--gluebreak="))){
+            int gluebreak  = (int)strtol(value, NULL, 10);
+            if (gluebreak == 0 && errno == EINVAL){
+                cout << "ERROR! illegal gluebreak " << value << endl;
+                exit(0);
+            }
+            conf.broken_glue_restart = gluebreak;
         }else if ((value = hasPrefix(argv[i], "--reconf="))){
             long int reconf  = (int)strtol(value, NULL, 10);
             if (reconf == 0 && errno == EINVAL){
@@ -216,13 +238,13 @@ int main(int argc, char** argv)
         cout << "Reading from standard input... Use '-h' or '--help' for help.\n";
         #ifndef USE_ZLIB
         FILE* in = stdin;
-        DimacsParser<StreamBuffer<FILE*, FN> > parser(solver, "", conf.verbosity);
+        DimacsParser<StreamBuffer<FILE*, FN> > parser(solver, NULL, conf.verbosity);
         #else
         gzFile in = gzdopen(0, "rb"); //opens stdin, which is 0
-        DimacsParser<StreamBuffer<gzFile, GZ> > parser(solver, "", conf.verbosity);
+        DimacsParser<StreamBuffer<gzFile, GZ> > parser(solver, NULL, conf.verbosity);
         #endif
 
-        if (!parser.parse_DIMACS(in)) {
+        if (!parser.parse_DIMACS(in, false)) {
             exit(-1);
         }
 
@@ -250,12 +272,12 @@ int main(int argc, char** argv)
         }
 
         #ifndef USE_ZLIB
-        DimacsParser<StreamBuffer<FILE*, FN> > parser(solver, "", conf.verbosity);
+        DimacsParser<StreamBuffer<FILE*, FN> > parser(solver, NULL, conf.verbosity);
         #else
-        DimacsParser<StreamBuffer<gzFile, GZ> > parser(solver, "", conf.verbosity);
+        DimacsParser<StreamBuffer<gzFile, GZ> > parser(solver, NULL, conf.verbosity);
         #endif
 
-        if (!parser.parse_DIMACS(in)) {
+        if (!parser.parse_DIMACS(in, false)) {
             exit(-1);
         }
 

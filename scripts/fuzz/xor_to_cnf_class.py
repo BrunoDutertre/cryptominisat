@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Copyright (C) 2014  Mate Soos
 #
 # This program is free software; you can redistribute it and/or
@@ -127,8 +130,6 @@ class XorToCNF:
         assert self.cutsize > 2
 
         lits = self.parse_xor(xorclause)
-        assert lits > 4
-
         xors = []
 
         # xor clause that doesn't need to be cut up

@@ -1,6 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# Copyright (C) 2018  Mate Soos
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2
+# of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
 from __future__ import print_function
 import boto
 import traceback
@@ -60,22 +77,6 @@ def get_ip_address(ifname):
 def get_revision(full_solver_path, base_dir):
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
     return revision.strip()
-
-
-def upload_log(bucket, folder, logfile_name, fname):
-    try:
-        boto_conn = boto.connect_s3()
-        boto_bucket = boto_conn.get_bucket(bucket)
-        k = boto.s3.key.Key(boto_bucket)
-
-        k.key = folder + "/" + "logs/" + fname
-        boto_bucket.delete_key(k)
-        k.set_contents_from_filename(logfile_name)
-
-    except:
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        the_trace = traceback.format_exc().rstrip().replace("\n", " || ")
-        print("traceback for boto issue: %s" % the_trace)
 
 
 def get_s3_folder(folder, rev, solver, timeout, memout):

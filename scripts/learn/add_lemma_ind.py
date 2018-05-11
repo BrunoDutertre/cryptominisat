@@ -1,57 +1,26 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+# Copyright (C) 2017  Mate Soos
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2
+# of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
 
 from __future__ import print_function
 import sqlite3
 import optparse
-
-
-class Data:
-    def __init__(self, used_for_time=-1, num_used=0):
-        self.used_for_time = used_for_time
-        self.num_used = num_used
-
-
-def parse_lemmas(lemmafname):
-    """Takes the lemma file and returns map with clauses' IDs and data"""
-
-    # clause in "lemmas" file layout:
-    # CLAUSE 0 ID last_used num_used
-
-    ret = {}
-    with open(lemmafname, "r") as f:
-        for line, lineno in zip(f, xrange(1000*1000*1000)):
-            l = line.strip().split(" ")
-
-            if len(l) == 1:
-                # empty clause, finished
-                continue
-
-            myid = int(l[len(l)-3])
-            last_used = int(l[len(l)-2])
-            num_used = int(l[len(l)-1])
-
-            # checking that delete line is ok AND calculating used_for_time
-            if line[0] == "d":
-                if myid <= 1:
-                    continue
-
-                ret[myid].used_for_time = last_used - myid
-                if options.verbose:
-                    print("line %d" % lineno)
-                    print("myid:", myid)
-                    print("num used:", num_used)
-                    print(ret[myid].num_used)
-
-                continue
-
-            #cl = sorted(l[:-4])
-            used_for_time = 1000000  # used until the end
-
-            ret[myid] = Data(used_for_time, num_used)
-
-    print("Parsed %d number of good lemmas" % len(ret))
-    return ret
 
 
 class Query:
@@ -59,6 +28,10 @@ class Query:
         self.conn = sqlite3.connect(dbfname)
         self.c = self.conn.cursor()
         self.runID = self.find_runID()
+        # zero out goodClauses
+        self.c.execute('delete from goodClauses;')
+        self.num_goods_total = 0
+        self.cur_good_ids = []
 
     def __enter__(self):
         return self
@@ -66,6 +39,41 @@ class Query:
     def __exit__(self, exc_type, exc_value, traceback):
         self.conn.commit()
         self.conn.close()
+
+    def parse_and_add_lemmas(self, lemmafname):
+        with open(lemmafname, "r") as f:
+            for line in f:
+                line = line.strip().split(" ")
+                self.parse_one_line(line)
+
+        # final dump
+        self.dump_ids()
+
+        print("Parsed %d number of good lemmas" % self.num_goods_total)
+
+    def parse_one_line(self, line):
+        self.num_goods_total += 1
+
+        # get ID
+        myid = int(line[len(line)-1])
+        assert myid >= 0, "ID is always at least 0"
+        assert myid != 0, "ID with 0 should not even be printed"
+
+        # num_used = int(line[len(line)-1])
+        num_used = 0
+
+        # append to cur_good_ids
+        self.cur_good_ids.append((self.runID, myid, num_used))
+
+        # don't run out of memory, dump early
+        if num_used > 10000:
+            self.dump_ids()
+
+    def dump_ids(self):
+        self.c.executemany("""
+        INSERT INTO goodClauses (`runID`, `clauseID`, `numUsed`)
+        VALUES (?, ?, ?);""", self.cur_good_ids)
+        self.cur_good_ids = []
 
     def find_runID(self):
         q = """
@@ -76,23 +84,13 @@ class Query:
 
         runID = None
         for row in self.c.execute(q):
-            if runID != None:
+            if runID is not None:
                 print("ERROR: More than one RUN in the SQL, can't add lemmas!")
                 exit(-1)
             runID = int(row[0])
 
         print("runID: %d" % runID)
         return runID
-
-    def add_goods(self, ids):
-        self.c.execute('delete from goodClauses;')
-
-        id_b = [(self.runID, ID, x.num_used, x.used_for_time) for ID,
-                x in ids.iteritems()]
-        self.c.executemany("""
-            INSERT INTO goodClauses (`runID`, `clauseID`, `numUsed`,
-                `usedForTime`)
-            VALUES (?, ?, ?, ?);""", id_b)
 
 
 if __name__ == "__main__":
@@ -119,9 +117,7 @@ it was good or not."""
     print("Using lemma file %s" % lemmafname)
 
     with Query(dbfname) as q:
-        useful_lemma_ids = parse_lemmas(lemmafname)
-        print("Num good IDs: %d" % len(useful_lemma_ids))
-        q.add_goods(useful_lemma_ids)
+        q.parse_and_add_lemmas(lemmafname)
 
     print("Finished adding good lemma indicators to db %s" % dbfname)
     exit(0)

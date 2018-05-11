@@ -120,11 +120,17 @@ public:
     #ifdef AVGCALC_NEED_MIN_MAX
     T getMin() const
     {
+        if (min == std::numeric_limits<T>::max())
+            return 0;
+
         return min;
     }
 
     T getMax() const
     {
+        if (max == std::numeric_limits<T>::min())
+            return 0;
+
         return max;
     }
     #endif

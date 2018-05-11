@@ -84,7 +84,7 @@ void VarReplacer::check_no_replaced_var_set() const
 void VarReplacer::new_vars(const size_t n)
 {
     size_t oldsize = table.size();
-    table.resize(table.size()+n, lit_Undef);
+    table.insert(table.end(), n, lit_Undef);
     for(size_t i = oldsize; i < table.size(); i++) {
         table[i] = Lit(i, false);
     }
@@ -148,12 +148,17 @@ void VarReplacer::update_vardata_and_activities(
     assert(solver->varData[replaced_with].removed == Removed::none);
     assert(solver->value(replaced_with) == l_Undef);
 
-    double orig_act = solver->var_act_vsids[orig];
-    double repl_with_act = solver->var_act_vsids[replaced_with];
-    if (orig_act + repl_with_act >= orig_act) {
-        solver->var_act_vsids[replaced_with] += orig_act;
+    double orig_act_vsids = solver->var_act_vsids[orig];
+    double repl_with_act_vsids = solver->var_act_vsids[replaced_with];
+    if (orig_act_vsids + repl_with_act_vsids >= orig_act_vsids) {
+        solver->var_act_vsids[replaced_with] += orig_act_vsids;
     }
-    //TODO: should we do the above for maple too?
+
+    double repl_with_act_maple = solver->var_act_maple[replaced_with];
+    double orig_act_maple = solver->var_act_maple[orig];
+    if (orig_act_maple + repl_with_act_maple >= orig_act_maple) {
+        solver->var_act_maple[replaced_with] += orig_act_maple;
+    }
 }
 
 bool VarReplacer::enqueueDelayedEnqueue()
@@ -276,7 +281,7 @@ end:
     runStats.zeroDepthAssigns += solver->trail_size() - origTrailSize;
     runStats.cpu_time = time_used;
     globalStats += runStats;
-    if (solver->conf.verbosity  >= 1) {
+    if (solver->conf.verbosity) {
         if (solver->conf.verbosity  >= 3)
             runStats.print(solver->nVars());
         else
@@ -315,7 +320,7 @@ void VarReplacer::newBinClause(
         && origLit2 < origLit3
     ){
         delayed_attach_bin.push_back(BinaryClause(lit1, lit2, red));
-        (*solver->drat) << lit1 << lit2 << fin;
+        (*solver->drat) << add << lit1 << lit2 << fin;
     }
 }
 
@@ -332,7 +337,7 @@ inline void VarReplacer::updateBin(
     //Two lits are the same in BIN
     if (lit1 == lit2) {
         delayedEnqueue.push_back(lit2);
-        (*solver->drat) << lit2 << fin;
+        (*solver->drat) << add << lit2 << fin;
         remove = true;
     }
 
@@ -359,7 +364,7 @@ inline void VarReplacer::updateBin(
         && (origLit1 < origLit2)
     ) {
         (*solver->drat)
-        << lit1 << lit2 << fin
+        << add << lit1 << lit2 << fin
         << del << origLit1 << origLit2 << fin;
     }
 
@@ -562,7 +567,7 @@ bool VarReplacer::handleUpdatedClause(
         c.setRemoved();
         return true;
     }
-    (*solver->drat) << c << fin << findelay;
+    (*solver->drat) << add << c << fin << findelay;
 
     runStats.bogoprops += 3;
     switch(c.size()) {
@@ -697,10 +702,10 @@ bool VarReplacer::handleAlreadyReplaced(const Lit lit1, const Lit lit2)
     //OOps, already inside, but with inverse polarity, UNSAT
     if (lit1.sign() != lit2.sign()) {
         (*solver->drat)
-        << ~lit1 << lit2 << fin
-        << lit1 << ~lit2 << fin
-        << lit1 << fin
-        << ~lit1 << fin;
+        << add << ~lit1 << lit2 << fin
+        << add << lit1 << ~lit2 << fin
+        << add << lit1 << fin
+        << add << ~lit1 << fin;
 
         solver->ok = false;
         return false;
@@ -718,8 +723,8 @@ bool VarReplacer::replace_vars_already_set(
 ) {
     if (val1 != val2) {
         (*solver->drat)
-        << ~lit1 << fin
-        << lit1 << fin;
+        << add << ~lit1 << fin
+        << add << lit1 << fin;
 
         solver->ok = false;
     }
@@ -742,7 +747,7 @@ bool VarReplacer::handleOneSet(
             toEnqueue = lit1 ^ (val2 == l_False);
         }
         solver->enqueue(toEnqueue);
-        (*solver->drat) << toEnqueue << fin;
+        (*solver->drat) << add << toEnqueue << fin;
 
         #ifdef STATS_NEEDED
         solver->propStats.propsUnit++;
@@ -773,8 +778,8 @@ bool VarReplacer::replace(
 
     #ifdef DRAT_DEBUG
     (*solver->drat)
-    << Lit(var1, true)  << " " << (Lit(var2, false) ^ xor_is_true) << fin
-    << Lit(var1, false) << " " << (Lit(var2, true)  ^ xor_is_true) << fin
+    << add << Lit(var1, true)  << (Lit(var2, false) ^ xor_is_true) << fin
+    << add << Lit(var1, false) << (Lit(var2, true)  ^ xor_is_true) << fin
     ;
     #endif
 
@@ -787,8 +792,8 @@ bool VarReplacer::replace(
         return handleAlreadyReplaced(lit1, lit2);
     }
     (*solver->drat)
-    << ~lit1 << lit2 << fin
-    << lit1 << ~lit2 << fin;
+    << add << ~lit1 << lit2 << fin
+    << add << lit1 << ~lit2 << fin;
 
     //None should be removed, only maybe queued for replacement
     assert(solver->varData[lit1.var()].removed == Removed::none);
@@ -961,32 +966,54 @@ size_t VarReplacer::mem_used() const
     return b;
 }
 
-void VarReplacer::print_equivalent_literals(std::ostream *os) const
+uint32_t VarReplacer::print_equivalent_literals(bool outer_numbering, std::ostream *os) const
 {
+    uint32_t num = 0;
     vector<Lit> tmpCl;
     for (uint32_t var = 0; var < table.size(); var++) {
         const Lit lit = table[var];
         if (lit.var() == var)
             continue;
 
-        tmpCl.clear();
-        tmpCl.push_back(~lit);
-        tmpCl.push_back(Lit(var, false));
-        std::sort(tmpCl.begin(), tmpCl.end());
+        //They have been renumbered in a way that cannot be dumped
+        Lit lit1;
+        Lit lit2;
+        if (outer_numbering) {
+            lit1 = lit;
+            lit2 = Lit(var, false);
+        } else {
+            lit1 = solver->map_outer_to_inter(lit);
+            lit2 = solver->map_outer_to_inter(Lit(var, false));
 
-        *os
-        << tmpCl[0] << " "
-        << tmpCl[1]
-        << " 0\n";
+            if (lit1.var() >= solver->nVars() ||
+                lit2.var() >= solver->nVars()
+            ) {
+                continue;
+            }
+        }
 
-        tmpCl[0] ^= true;
-        tmpCl[1] ^= true;
+        if (os) {
+            tmpCl.clear();
+            tmpCl.push_back(~lit1);
+            tmpCl.push_back(lit2);
+            std::sort(tmpCl.begin(), tmpCl.end());
 
-        *os
-        << tmpCl[0] << " "
-        << tmpCl[1]
-        << " 0\n";
+            *os
+            << tmpCl[0] << " "
+            << tmpCl[1]
+            << " 0\n";
+
+            tmpCl[0] ^= true;
+            tmpCl[1] ^= true;
+
+            *os
+            << tmpCl[0] << " "
+            << tmpCl[1]
+            << " 0\n";
+        }
+        num++;
     }
+    return num;
 }
 
 void VarReplacer::print_some_stats(const double global_cpu_time) const
@@ -1160,4 +1187,9 @@ void VarReplacer::load_state(SimpleInFile& f)
         f.get_vector(point_to);
         reverseTable[v] = point_to;
     }
+}
+
+bool VarReplacer::get_scc_depth_warning_triggered() const
+{
+    return scc_finder->depth_warning_triggered();
 }

@@ -23,6 +23,10 @@ include_directories(
 )
 
 if (NOT WIN32)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        #add_cxx_flag_if_supported("-fno-exceptions")
+    endif()
+
     add_cxx_flag_if_supported("-Wno-bitfield-constant-conversion")
     #add_cxx_flag_if_supported("-Wduplicated-cond")
     #add_cxx_flag_if_supported("-Wduplicated-branches")
@@ -37,6 +41,7 @@ if (NOT WIN32)
     add_cxx_flag_if_supported("-pedantic")
     #add_cxx_flag_if_supported("-Wdeprecated")
 endif()
+add_sanitize_flags()
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
@@ -75,7 +80,7 @@ set(cryptoms_lib_files
     clauseallocator.cpp
     sccfinder.cpp
     solverconf.cpp
-    distillerallwithall.cpp
+    distillerlong.cpp
     distillerlongwithimpl.cpp
     str_impl_w_impl_stamp.cpp
     solutionextender.cpp
@@ -195,9 +200,10 @@ if (IPASIR)
     )
     install(TARGETS ipasircryptominisat5
         EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
-        LIBRARY DESTINATION "${CMAKE_INSTALL_PREFIX}/${LIBDIR}"
-        ARCHIVE DESTINATION "${CMAKE_INSTALL_PREFIX}/${LIBDIR}"
-        PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_PREFIX}/${INCLUDEDIR}/cryptominisat5"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+        PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cryptominisat5"
     )
 
 endif()
@@ -205,6 +211,8 @@ endif()
 cmsat_add_public_header(libcryptominisat5 ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat_c.h )
 cmsat_add_public_header(libcryptominisat5 ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat.h )
 cmsat_add_public_header(libcryptominisat5 ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/solvertypesmini.h )
+cmsat_add_public_header(libcryptominisat5 ${CMAKE_CURRENT_SOURCE_DIR}/dimacsparser.h )
+cmsat_add_public_header(libcryptominisat5 ${CMAKE_CURRENT_SOURCE_DIR}/streambuffer.h )
 
 # -----------------------------------------------------------------------------
 # Copy public headers into build directory include directory.
@@ -230,9 +238,10 @@ endforeach()
 
 install(TARGETS libcryptominisat5
     EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
-    LIBRARY DESTINATION "${CMAKE_INSTALL_PREFIX}/${LIBDIR}"
-    ARCHIVE DESTINATION "${CMAKE_INSTALL_PREFIX}/${LIBDIR}"
-    PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_PREFIX}/${INCLUDEDIR}/cryptominisat5"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cryptominisat5"
 )
 
 if (NOT ONLY_SIMPLE)
@@ -241,14 +250,6 @@ if (NOT ONLY_SIMPLE)
         main_exe.cpp
         signalcode.cpp
     )
-
-    if (USE_GAUSS)
-        add_executable(scalmc
-            main.cpp
-            signalcode.cpp
-            scalmc.cpp
-        )
-    endif()
 endif()
 add_executable(cryptominisat5_simple
     main_simple.cpp
@@ -256,7 +257,6 @@ add_executable(cryptominisat5_simple
 
 set(cryptoms_exec_link_libs
     libcryptominisat5
-    ${Boost_LIBRARIES}
 )
 
 IF (ZLIB_FOUND)
@@ -277,31 +277,11 @@ target_link_libraries(cryptominisat5_simple
 )
 install(TARGETS cryptominisat5_simple
     EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
-    RUNTIME DESTINATION ${BINDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 SET(CPACK_PACKAGE_EXECUTABLES "cryptominisat5_simple")
 
 if (NOT ONLY_SIMPLE)
-    if (USE_GAUSS)
-        if (STATICCOMPILE)
-            SET_TARGET_PROPERTIES(scalmc PROPERTIES LINK_SEARCH_START_STATIC 1)
-        endif()
-        set_target_properties(scalmc PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
-            INSTALL_RPATH_USE_LINK_PATH TRUE)
-        if (STATICCOMPILE)
-            SET_TARGET_PROPERTIES(scalmc PROPERTIES LINK_SEARCH_END_STATIC 1)
-        endif()
-        target_link_libraries(scalmc
-            ${cryptoms_exec_link_libs}
-        )
-        install(TARGETS scalmc
-            EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
-            RUNTIME DESTINATION ${BINDIR}
-        )
-        SET(CPACK_PACKAGE_EXECUTABLES "scalmc")
-    endif()
-
     if (STATICCOMPILE)
         SET_TARGET_PROPERTIES(cryptominisat5 PROPERTIES LINK_SEARCH_START_STATIC 1)
     endif()
@@ -313,10 +293,11 @@ if (NOT ONLY_SIMPLE)
     endif()
     target_link_libraries(cryptominisat5
         ${cryptoms_exec_link_libs}
+        ${Boost_LIBRARIES}
     )
     install(TARGETS cryptominisat5
         EXPORT ${CRYPTOMINISAT5_EXPORT_NAME}
-        RUNTIME DESTINATION ${BINDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
     SET(CPACK_PACKAGE_EXECUTABLES "cryptominisat5")
 endif()

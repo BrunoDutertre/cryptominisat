@@ -1,10 +1,28 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# Copyright (C) 2018  Mate Soos
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2
+# of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
 import optparse
 import random
 import time
 import string
+import configparser
 
 
 def parse_arguments():
@@ -26,14 +44,20 @@ To use other solvers, give:
 --solver MapleCOMSPS/simp/maplecomsps_static
 --solver cmsat-satcomp16/bin/cryptominisat4_simple
 --solver lingeling-bbc/build/lingeling/lingeling_bbc
+--solver Maple_LCM_Dist/Maple_LCM_Dist # may work with --drat, but needs updated DRAT checker
 
 
 Use-cases:
 # normal run
-./launch_server.py --cnflist satcomp14 --folder norm
+./launch_server.py --cnflist satcomp17_updated
+
+# stats run
+./launch_server.py --cnf test_updated --stats --drat --tout 600 --memlimit 10000
+./launch_server.py --cnf unsat_small_candidates_fullpath --stats --drat --tout 600 --memlimit 10000
+
 
 # testing, using small instance to check (cheaper & faster)
-./launch_server.py --cnflist test
+./launch_server.py --cnflist test_updated
 
 # 2 clients, no preprocessing
 ./launch_server.py --cnflist satcomp14 -c 2 --opt "--preproc 0" --folder no_preproc
@@ -100,12 +124,6 @@ aws s3 cp ../../src/features_to_reconf.cpp s3://msoos-solve-data/solvers/
                       type=str
                       )
 
-    parser.add_option("--s3bucket", default="msoos-solve-results",
-                      dest="s3_bucket", help="S3 Bucket to upload finished data"
-                      "[default: %default]",
-                      type=str
-                      )
-
     parser.add_option("--folder", default="results", dest="given_folder",
                       help="S3 folder name to upload data"
                       "[default: %default]",
@@ -138,10 +156,22 @@ aws s3 cp ../../src/features_to_reconf.cpp s3://msoos-solve-data/solvers/
                       )
 
     parser.add_option("--logfile", dest="logfile_name", type=str,
-                      default="python_server_log.txt", help="Name of LOG file")
+                      default="python_server_log.log", help="Name of LOG file")
 
     # parse options
     options, args = parser.parse_args()
+    conf = configparser.ConfigParser()
+    if options.cnf_list == "test":
+        conf.read('ec2-spot-instance-test.cfg')
+    else:
+        conf.read('ec2-spot-instance.cfg')
+
+    options.s3_bucket = conf.get("ec2", "result_bucket")
+    options.key_name = conf.get("ec2", "key_name")
+    options.security_group_server = conf.get("ec2", "security_group_server")
+    options.subnet_id = conf.get("ec2", "subnet_id")
+    options.ami_id = conf.get("ec2", "ami_id")
+    options.region = conf.get("ec2", "region")
 
     def rnd_id():
         return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(5))
@@ -156,6 +186,7 @@ aws s3 cp ../../src/features_to_reconf.cpp s3://msoos-solve-data/solvers/
         exit(-1)
 
     return options, args
+
 
 if __name__ == "__main__":
     options, args = parse_arguments()

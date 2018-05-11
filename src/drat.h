@@ -28,7 +28,7 @@ THE SOFTWARE.
 
 namespace CMSat {
 
-enum DratFlag{fin, deldelay, del, findelay};
+enum DratFlag{fin, deldelay, del, findelay, add};
 
 struct Drat
 {
@@ -82,17 +82,88 @@ struct Drat
     virtual void setFile(std::ostream*)
     {
     }
+
+    virtual void flush()
+    {
+    }
+
+    int buf_len;
+    unsigned char* drup_buf = 0;
+    unsigned char* buf_ptr;
 };
 
 template<bool add_ID>
 struct DratFile: public Drat
 {
-    void setFile(std::ostream* _file) override
+    DratFile()
     {
-        file = _file;
+        drup_buf = new unsigned char[2 * 1024 * 1024];
+        buf_ptr = drup_buf;
+        buf_len = 0;
+        memset(drup_buf, 0, 2 * 1024 * 1024);
+
+        del_buf = new unsigned char[2 * 1024 * 1024];
+        del_ptr = del_buf;
+        del_len = 0;
     }
 
-    bool get_conf_id() {
+    virtual ~DratFile()
+    {
+        delete[] drup_buf;
+        delete[] del_buf;
+    }
+
+    void byteDRUPa(const Lit l)
+    {
+        unsigned int u = 2 * (l.var() + 1) + l.sign();
+        do {
+            *buf_ptr++ = (u & 0x7f) | 0x80;
+            buf_len++;
+            u = u >> 7;
+        } while (u);
+
+        // End marker of this unsigned number
+        *(buf_ptr - 1) &= 0x7f;
+    }
+
+    void byteDRUPaID(const uint64_t id)
+    {
+        for(unsigned i = 0; i < 6; i++) {
+            *buf_ptr++ = (id>>(8*i))&0xff;
+            buf_len++;
+        }
+    }
+
+    void byteDRUPd(const Lit l)
+    {
+        unsigned int u = 2 * (l.var() + 1) + l.sign();
+        do {
+            *del_ptr++ = (u & 0x7f) | 0x80;
+            del_len++;
+            u = u >> 7;
+        } while (u);
+
+        // End marker of this unsigned number
+        *(del_ptr - 1) &= 0x7f;
+    }
+
+    void flush() override
+    {
+        binDRUP_flush();
+    }
+
+    void binDRUP_flush() {
+        drup_file->write((const char*)drup_buf, buf_len);
+        buf_ptr = drup_buf;
+        buf_len = 0;
+    }
+
+    void setFile(std::ostream* _file) override
+    {
+        drup_file = _file;
+    }
+
+    bool get_conf_id() override {
         return add_ID;
     }
 
@@ -103,7 +174,8 @@ struct DratFile: public Drat
 
     void forget_delay() override
     {
-        todel.str(string());
+        del_ptr = del_buf;
+        del_len = 0;
         must_delete_next = false;
         delete_filled = false;
     }
@@ -113,16 +185,19 @@ struct DratFile: public Drat
         return true;
     }
 
-    std::stringstream todel;
+    int del_len = 0;
+    unsigned char* del_buf;
+    unsigned char* del_ptr;
+
     bool delete_filled = false;
     bool must_delete_next = false;
 
     Drat& operator<<(const Lit lit) override
     {
         if (must_delete_next) {
-            todel << lit << " ";
+            byteDRUPd(lit);
         } else {
-            *file << lit << " ";
+            byteDRUPa(lit);
         }
 
         return *this;
@@ -131,16 +206,37 @@ struct DratFile: public Drat
     Drat& operator<<(const Clause& cl) override
     {
         if (must_delete_next) {
-            todel << cl << " ";
+            for(const Lit l: cl)
+                byteDRUPd(l);
         } else {
-            *file << cl << " ";
+            for(const Lit l: cl)
+                byteDRUPa(l);
+
+            #ifdef STATS_NEEDED
+            if (is_add && add_ID) {
+                ID = cl.stats.ID;
+
+                // actually... for on-the-fly subsumed irred clauses can have an ID.
+                //assert(!(ID != 0 && !cl.red()));
+
+                //redundant clauses MUST have a valid ID
+                assert(!(ID == 0 && cl.red()));
+            }
+            #endif
         }
-        #ifdef STATS_NEEDED
-        if (add_ID) {
-            ID = cl.stats.ID;
-            assert(ID != 0);
+
+        return *this;
+    }
+
+    Drat& operator<<(const vector<Lit>& cl) override
+    {
+        if (must_delete_next) {
+            for(const Lit l: cl)
+                byteDRUPd(l);
+        } else {
+            for(const Lit l: cl)
+                byteDRUPa(l);
         }
-        #endif
 
         return *this;
     }
@@ -151,64 +247,74 @@ struct DratFile: public Drat
         {
             case DratFlag::fin:
                 if (must_delete_next) {
-                    todel << "0\n";
+                    *del_ptr++ = 0;
+                    del_len++;
                     delete_filled = true;
                 } else {
-                    if (add_ID) {
-                        *file << "0 "
-                        << ID
-                        << "\n";
-                    } else {
-                        *file << "0 \n";
+                    *buf_ptr++ = 0;
+                    buf_len++;
+                    #ifdef STATS_NEEDED
+                    if (is_add && add_ID) {
+                        byteDRUPaID(ID);
+                        //cout << "ID is:" << ID << endl;
+                        ID = 0;
                     }
-                }
-                if (add_ID) {
-                    ID = 1;
+                    #endif
+                    if (buf_len > 1048576) {
+                        binDRUP_flush();
+                    }
                 }
                 must_delete_next = false;
                 break;
 
             case DratFlag::deldelay:
                 assert(!delete_filled);
-                assert(todel.str() == "");
-                todel.str(string());
+                forget_delay();
+                *del_ptr++ = 'd';
+                del_len++;
                 delete_filled = false;
-
                 must_delete_next = true;
                 break;
 
             case DratFlag::findelay:
                 assert(delete_filled);
-                *file << "d " << todel.str();
-                todel.str(string());
-                delete_filled = false;
+                memcpy(buf_ptr, del_buf, del_len);
+                buf_len += del_len;
+                buf_ptr += del_len;
+                if (buf_len > 1048576) {
+                    binDRUP_flush();
+                }
+
+                forget_delay();
+                break;
+
+            case DratFlag::add:
+                #ifdef STATS_NEEDED
+                is_add = true;
+                ID =  0;
+                #endif
+                *buf_ptr++ = 'a';
+                buf_len++;
                 break;
 
             case DratFlag::del:
-                todel.str(string());
-                delete_filled = false;
-
-                must_delete_next = false;
-                *file << "d ";
+                #ifdef STATS_NEEDED
+                is_add = false;
+                #endif
+                forget_delay();
+                *buf_ptr++ = 'd';
+                buf_len++;
                 break;
         }
 
         return *this;
     }
 
-    Drat& operator<<(const vector<Lit>& lits) override
-    {
-        if (must_delete_next) {
-            todel << lits << " ";
-        } else {
-            *file << lits << " ";
-        }
-
-        return *this;
-    }
-
-    std::ostream* file = NULL;
-    int64_t ID = 1;
+    std::ostream* drup_file = NULL;
+    #ifdef STATS_NEEDED
+    int64_t ID = 0;
+    bool is_add = true;
+    #endif
 };
 
 }

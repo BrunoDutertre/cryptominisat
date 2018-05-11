@@ -65,27 +65,21 @@ include(AddSTPGTest)
 include(AddGTestSuite)
 
 # -----------------------------------------------------------------------------
-# Tests that drive cryptominisat by using cnf files (e.g. smt2, smt and cvc files)
 # -----------------------------------------------------------------------------
 
-option(TEST_CNF_FILES
-       "Enable tests that use cnf files to drive cryptominisat"
-       ON
-      )
-
-if(TEST_CNF_FILES)
+if(NOT ONLY_SIMPLE)
+    # Tests that drive cryptominisat by using cnf files (e.g. smt2, smt and cvc files)
     add_subdirectory(${PROJECT_SOURCE_DIR}/tests/cnf-files)
+
+    # Needed for fuzz-testing
+    add_subdirectory(${PROJECT_SOURCE_DIR}/utils/cnf-utils cnf-utils)
+    add_subdirectory(${PROJECT_SOURCE_DIR}/utils/drat-trim drat-trim)
+    add_subdirectory(${PROJECT_SOURCE_DIR}/utils/sha1-sat sha1-sat)
+    add_subdirectory(${PROJECT_SOURCE_DIR}/utils/minisat minisat)
 endif()
 
-
-# -----------------------------------------------------------------------------
-
-add_subdirectory(${PROJECT_SOURCE_DIR}/utils/cnf-utils cnf-utils)
-add_subdirectory(${PROJECT_SOURCE_DIR}/utils/drat-trim drat-trim)
-add_subdirectory(${PROJECT_SOURCE_DIR}/utils/sha1-sat sha1-sat)
-
-
-if (PYTHON_EXECUTABLE AND ZLIB_FOUND)
+add_sanitize_flags()
+if (PYTHON_EXECUTABLE AND ZLIB_FOUND AND NOT STATS_NEEDED AND NOT ONLY_SIMPLE)
     add_subdirectory(${PROJECT_SOURCE_DIR}/utils/minisat_only_elim_and_subsume minisat_only_elim_and_subsume)
     add_subdirectory(simp-checks)
 endif()
@@ -112,17 +106,19 @@ add_test (
 )
 
 # C bindings test
-add_executable(c_test
-    c_test.c
-)
-target_link_libraries(c_test
-    libcryptominisat5
-)
-add_test (
-    NAME c_test
-    COMMAND c_test
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
+if (NOT SANITIZE)
+    add_executable(c_test
+        c_test.c
+    )
+    target_link_libraries(c_test
+        libcryptominisat5
+    )
+    add_test (
+        NAME c_test
+        COMMAND c_test
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
 
 # Multisol test
 add_executable(multisol_test
@@ -171,6 +167,7 @@ set (MY_TESTS
     intree_test
     xorfinder_test
     comphandler_test
+    dump_test
 #    undefine_test
 )
 

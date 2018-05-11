@@ -1,6 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# Copyright (C) 2018  Mate Soos
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2
+# of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
 from __future__ import print_function
 import os
 import socket
@@ -23,7 +40,7 @@ import functools
 import string
 
 # for importing in systems where "." is not in the PATH
-sys.path.append(os.getcwd())
+sys.path.append(os.getcwd()+"/scripts/learn/")
 from common_aws import *
 import add_lemma_ind as addlemm
 
@@ -173,9 +190,11 @@ class solverThread (threading.Thread):
         return "%s/drat" % self.temp_space
 
     def get_toexec(self):
-        os.system("aws s3 cp s3://msoos-solve-data/%s %s --region us-west-2" % (
-            self.indata["cnf_filename"],
-            self.get_tmp_cnf_fname()))
+        logging.info("Getting file to solve {cnf}".format(cnf=self.indata["cnf_filename"]),
+                extra=self.logextra)
+
+        key = boto.connect_s3().get_bucket("msoos-solve-data").get_key(self.indata["cnf_filename"])
+        key.get_contents_to_filename(self.get_tmp_cnf_fname())
 
         toexec = []
         toexec.append("%s/%s" % (options.base_dir, self.indata["solver"]))
@@ -188,11 +207,17 @@ class solverThread (threading.Thread):
 
         toexec.append(self.get_tmp_cnf_fname())
         if self.indata["drat"]:
-            toexec.append(self.get_drat_fname())
-            toexec.append("--clid")
-            toexec.append("-n 1")
-            toexec.append("--gluecut0 25")
-            toexec.append("--otfsubsume 0")
+            if "Maple" in self.indata["solver"]:
+                toexec.extend(["-drup-file=%s" % self.get_drat_fname()])
+            if "cryptominisat5" in self.indata["solver"]:
+                toexec.extend(["--drat", self.get_drat_fname()])
+                # never stop search() to simplify anything
+                # toexec.append("-n 1")
+                # toexec.append("--ml 0")
+                # toexec.append("--gluecut0 100")
+                # toexec.append("--otfsubsume 0")
+                if self.indata["stats"]:
+                    toexec.append("--clid")
         else:
             if "cryptominisat5" in self.indata["solver"] and self.indata["stats"]:
                 toexec.append("--sqlfull 0")
@@ -238,7 +263,7 @@ class solverThread (threading.Thread):
         return p.returncode, toexec
 
     def run_drat_trim(self):
-        toexec = "%s/drat-trim/drat-trim %s %s -l %s" % (
+        toexec = "%s/drat-trim/drat-trim %s %s -x %s" % (
             options.base_dir,
             self.get_tmp_cnf_fname(),
             self.get_drat_fname(),
@@ -274,7 +299,7 @@ class solverThread (threading.Thread):
 
         useful_lemma_ids = []
         with addlemm.Query(dbfname) as q:
-            useful_lemma_ids = addlemm.parse_lemmas(lemmafname)
+            useful_lemma_ids = addlemm.parse_lemmas(lemmafname, q.runID)
             q.add_goods(useful_lemma_ids)
 
         logging.info("Num good IDs: %d",
@@ -307,31 +332,43 @@ class solverThread (threading.Thread):
         toreturn = []
 
         # stdout
-        os.system("gzip -f %s" % self.get_stdout_fname())
+        ret = os.system("gzip -f %s" % self.get_stdout_fname())
+        logging.info("Return from gzip '%s': %s", self.get_stdout_fname(),
+                     ret, extra=self.logextra)
         fname = s3_folder_and_fname + ".stdout.gz-tmp" + self.rnd_id()
         fname_clean = s3_folder_and_fname_clean + ".stdout.gz"
         k.key = fname
         boto_bucket.delete_key(k)
-        k.set_contents_from_filename(self.get_stdout_fname() + ".gz")
+        ret = k.set_contents_from_filename(self.get_stdout_fname() + ".gz")
+        logging.info("Return from S3 writing file '%s': %s",
+                     fname, ret, extra=self.logextra)
         toreturn.append([fname, fname_clean])
 
         # stderr
-        os.system("gzip -f %s" % self.get_stderr_fname())
+        ret = os.system("gzip -f %s" % self.get_stderr_fname())
+        logging.info("Return from gzip '%s': %s", self.get_stderr_fname(),
+                     ret, extra=self.logextra)
         fname = s3_folder_and_fname + ".stderr.gz-tmp" + self.rnd_id()
         fname_clean = s3_folder_and_fname_clean + ".stderr.gz"
         k.key = fname
         boto_bucket.delete_key(k)
-        k.set_contents_from_filename(self.get_stderr_fname() + ".gz")
+        ret = k.set_contents_from_filename(self.get_stderr_fname() + ".gz")
+        logging.info("Return from S3 writing file '%s': %s",
+                     fname, ret, extra=self.logextra)
         toreturn.append([fname, fname_clean])
 
         # sqlite
         if "cryptominisat5" in self.indata["solver"] and self.indata["stats"]:
-            os.system("gzip -f %s" % self.get_sqlite_fname())
+            ret = os.system("gzip -f %s" % self.get_sqlite_fname())
+            logging.info("Return from gzip '%s': %s", self.get_sqlite_fname(),
+                         ret, extra=self.logextra)
             fname = s3_folder_and_fname + ".sqlite.gz-tmp" + self.rnd_id()
             fname_clean = s3_folder_and_fname_clean + ".sqlite.gz"
             k.key = fname
             boto_bucket.delete_key(k)
-            k.set_contents_from_filename(self.get_sqlite_fname() + ".gz")
+            ret = k.set_contents_from_filename(self.get_sqlite_fname() + ".gz")
+            logging.info("Return from S3 writing file '%s': %s",
+                         fname, ret, extra=self.logextra)
             toreturn.append([fname, fname_clean])
 
         logging.info("Uploaded stdout+stderr+sqlite files: %s",
@@ -391,7 +428,7 @@ class solverThread (threading.Thread):
             # handle 'solve'
             if self.indata["command"] == "solve":
                 returncode, executed = self.execute_solver()
-                if returncode == 20 and self.indata["drat"]:
+                if returncode == 20 and self.indata["drat"] and self.indata["stats"]:
                     if self.run_drat_trim() == 0:
                         self.add_lemma_idx_to_sqlite(
                             self.get_lemmas_fname(),
@@ -486,10 +523,7 @@ def build_cryptominisat(indata):
                               )
     global s3_bucket
     s3_bucket = indata["s3_bucket"]
-    upload_log(s3_bucket,
-               s3_folder,
-               "%s/build.log" % options.base_dir,
-               "cli-build-%s.txt" % get_ip_address("eth0"))
+    logging.info("s3 bucket: %, s3 folder: %", s3_bucket, s3_folder, extra={"threadid": "-1"})
     if ret != 0:
         logging.error("Error building cryptominisat, shutting down!",
                       extra={"threadid": -1}
@@ -564,14 +598,6 @@ def shutdown(exitval=0):
         logging.error("Cannot send email! Traceback: %s", the_trace,
                       extra={"threadid": -1})
 
-    # upload log
-    global s3_bucket
-    global s3_folder
-    upload_log(s3_bucket,
-               s3_folder,
-               options.logfile_name,
-               "cli-%s.txt" % get_ip_address("eth0"))
-
     if not options.noshutdown:
         os.system(toexec)
 
@@ -634,7 +660,7 @@ def start_threads():
 
 def print_to_log_local_setup():
     data = boto.utils.get_instance_metadata()
-    for a, b in data.iteritems():
+    for a, b in data.items():
         logging.info("%s -- %s", a, b, extra={"threadid": -1})
 
 
@@ -710,9 +736,7 @@ def parse_command_line():
                       )
 
     parser.add_option("--host", dest="host",
-                      help="Host to connect to as a client"
-                      " [default: IP of eth0]",
-                      )
+                      help="Host to connect to as a client")
     parser.add_option("--port", "-p", default=10000, dest="port",
                       type="int", help="Port to use"
                       " [default: %default]",
@@ -731,7 +755,7 @@ def parse_command_line():
                       help="The home dir of cryptominisat"
                       " [default: %default]",
                       )
-    parser.add_option("--net", default="eth0", dest="network_device", type=str,
+    parser.add_option("--net", default="ens3", dest="network_device", type=str,
                       help="The network device we will be using"
                       " [default: %default]",
                       )
@@ -743,7 +767,7 @@ def parse_command_line():
                       help="Device name")
 
     parser.add_option("--logfile", dest="logfile_name", type=str,
-                      default="python_log.txt", help="Name of LOG file")
+                      default="python_log.log", help="Name of LOG file")
 
     (options, args) = parser.parse_args()
 

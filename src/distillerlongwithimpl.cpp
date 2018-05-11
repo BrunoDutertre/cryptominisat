@@ -325,6 +325,7 @@ bool DistillerLongWithImpl::sub_str_cl_with_cache_watch_stamp(
     return remove_or_shrink_clause(cl, offset);
 }
 
+//returns FALSE in case clause is shortened, and TRUE in case it is removed
 bool DistillerLongWithImpl::remove_or_shrink_clause(Clause& cl, ClOffset& offset)
 {
     //Remove or shrink clause
@@ -407,12 +408,16 @@ bool DistillerLongWithImpl::shorten_all_cl_with_cache_watch_stamp(
     tmpStats.numCalled = 1;
     cache_based_data.clear();
     bool need_to_finish = false;
-    randomise_order_of_clauses(clauses);
+
+    //don't randomise if it's too large.
+    if (clauses.size() < 100*10000*1000) {
+        randomise_order_of_clauses(clauses);
+    }
 
     size_t i = 0;
     size_t j = i;
     ClOffset offset;
-    #ifdef USE_GAUS
+    #ifdef USE_GAUSS
     Clause* cl;
     #endif
     const size_t end = clauses.size();
@@ -434,8 +439,8 @@ bool DistillerLongWithImpl::shorten_all_cl_with_cache_watch_stamp(
             goto copy;
         }
 
-        #ifdef USE_GAUS
-        solver->cl_alloc.ptr(offset);
+        #ifdef USE_GAUSS
+        cl = solver->cl_alloc.ptr(offset);
         if (cl->_used_in_xor) {
             goto copy;
         }
@@ -555,10 +560,10 @@ DistillerLongWithImpl::Stats& DistillerLongWithImpl::Stats::operator+=(const Sta
     return *this;
 }
 
-void DistillerLongWithImpl::Stats::print_short(const Solver* solver) const
+void DistillerLongWithImpl::Stats::print_short(const Solver* _solver) const
 {
-    irredCacheBased.print_short("irred", solver);
-    redCacheBased.print_short("red", solver);
+    irredCacheBased.print_short("irred", _solver);
+    redCacheBased.print_short("red", _solver);
 }
 
 void DistillerLongWithImpl::Stats::print() const
@@ -573,7 +578,7 @@ void DistillerLongWithImpl::Stats::print() const
 }
 
 
-void DistillerLongWithImpl::Stats::CacheBased::print_short(const string type, const Solver* solver) const
+void DistillerLongWithImpl::Stats::CacheBased::print_short(const string type, const Solver* _solver) const
 {
     cout << "c [distill] cache-based "
     << std::setw(5) << type
@@ -582,7 +587,7 @@ void DistillerLongWithImpl::Stats::CacheBased::print_short(const string type, co
     << " cl-sh " << std::setw(5) << shrinked
     << " cl-rem " << std::setw(4) << numClSubsumed
     << " lit-rem " << std::setw(6) << numLitsRem
-    << solver->conf.print_times(cpu_time, ranOutOfTime)
+    << _solver->conf.print_times(cpu_time, ranOutOfTime)
     << endl;
 }
 

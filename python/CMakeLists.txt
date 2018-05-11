@@ -19,8 +19,25 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-execute_process(COMMAND python-config --cflags OUTPUT_VARIABLE PY_C_CONFIG)
-execute_process(COMMAND python-config --ldflags OUTPUT_VARIABLE PY_LD_CONFIG)
+execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "
+from __future__ import print_function;
+import sysconfig;
+print(sysconfig.get_config_var('CFLAGS'), end = '')"
+    OUTPUT_VARIABLE PY_C_CONFIG)
+
+execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "
+from __future__ import print_function;
+import sysconfig;
+print(sysconfig.get_config_var('SHLIBS'), end = '')"
+    OUTPUT_VARIABLE PY_LD_CONFIG)
+
+
+string(REPLACE "\n" " " PY_C_CONFIG ${PY_C_CONFIG})
+string(REPLACE "\n" " " PY_LD_CONFIG ${PY_LD_CONFIG})
+
+message(STATUS "Python CFLAGS:  '${PY_C_CONFIG}'")
+message(STATUS "Python LDFLAGS: '${PY_LD_CONFIG}'")
+
 
 set(SETUP_PY    "${CMAKE_CURRENT_BINARY_DIR}/setup.py")
 set(OUTPUT      "${CMAKE_CURRENT_BINARY_DIR}/build")
@@ -53,11 +70,16 @@ add_custom_target(python_interface
 # Make a distribution source package
 # not really working -- only adds the .py files, and the test
 add_custom_target(python_interface_dist_package
-                  COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} sdist)
+                  COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} sdist
+                  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
-install(CODE "execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} install --record files.txt)")
+install(CODE "execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} install --record files.txt
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})"
+)
 
 if (ENABLE_TESTING AND NOT APPLE)
     add_test(NAME python_interface_test
-             COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} test)
+             COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endif()

@@ -44,8 +44,7 @@ if options.num is None:
     print("ERROR: You must give the number of reconfs")
     exit(-1)
 
-print("""
-/******************************************
+print("""/******************************************
 Copyright (c) 2016, Mate Soos
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -206,6 +205,4 @@ for i in range(options.num):
         read_one_reconf(i)
 
 print("""
-} //end namespace
-
-""")
+} //end namespace""")

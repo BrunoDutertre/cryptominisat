@@ -97,6 +97,8 @@ public:
     uint32_t minNumVars = 0;
     Drat* drat;
     uint32_t sumConflicts = 0;
+    uint32_t latest_feature_calc = 0;
+    uint64_t last_feature_calc_confl = 0;
     unsigned  cur_max_temp_red_lev2_cls = conf.max_temp_lev2_learnt_clauses;
 
     //Clauses
@@ -111,7 +113,7 @@ public:
     vector<Xor> xorclauses;
     BinTriStats binTri;
     LitStats litStats;
-    int64_t clauseID = 2;
+    int64_t clauseID = 1;
 
     //Temporaries
     vector<uint16_t> seen;
@@ -251,7 +253,11 @@ public:
     void test_all_clause_attached(const vector<ClOffset>& offsets) const;
     void check_wrong_attach() const;
     void check_watchlist(watch_subarray_const ws) const;
-    bool satisfied_cl(const Clause* cl) const;
+    template<class T>
+    bool satisfied_cl(const T& cl) const;
+    template<typename T> bool no_duplicate_lits(const T& lits) const;
+    void check_no_duplicate_lits_anywhere() const;
+    void check_clid_correct() const;
     void print_all_clauses() const;
     uint64_t count_lits(
         const vector<ClOffset>& clause_array
@@ -303,7 +309,7 @@ void CNF::for_each_lit(
 
         case CMSat::watch_clause_t: {
             const Clause& clause = *cl_alloc.ptr(cl.ws.get_offset());
-            *limit -= clause.size();
+            *limit -= (int64_t)clause.size();
             for(const Lit lit: clause) {
                 func(lit);
             }
@@ -385,27 +391,6 @@ inline void CNF::clean_occur_from_removed_clauses_only_smudged()
         clear_one_occur_from_removed_clauses(watches[l]);
     }
     watches.clear_smudged();
-}
-
-inline bool CNF::no_marked_clauses() const
-{
-    for(ClOffset offset: longIrredCls) {
-        Clause* cl = cl_alloc.ptr(offset);
-        if (cl->stats.marked_clause) {
-            return false;
-        }
-    }
-
-    for(auto& lredcls: longRedCls) {
-        for(ClOffset offset: lredcls) {
-            Clause* cl = cl_alloc.ptr(offset);
-            if (cl->stats.marked_clause) {
-                return false;
-            }
-        }
-    }
-
-    return true;
 }
 
 inline void CNF::clean_occur_from_idx_types_only_smudged()
@@ -516,6 +501,58 @@ inline void CNF::check_no_removed_or_freed_cl_in_watch() const
             assert(!cl.freed());
         }
     }
+}
+
+template<class T>
+bool CNF::satisfied_cl(const T& cl) const {
+    for(Lit lit: cl) {
+        if (value(lit) == l_True) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+template<typename T>
+bool CNF::no_duplicate_lits(const T& lits) const
+{
+    vector<Lit> x(lits.size());
+    for(size_t i = 0; i < x.size(); i++) {
+        x[i] = lits[i];
+    }
+    std::sort(x.begin(), x.end());
+    for(size_t i = 1; i < x.size(); i++) {
+        if (x[i-1] == x[i])
+            return false;
+    }
+    return true;
+}
+
+inline void CNF::check_no_duplicate_lits_anywhere() const
+{
+    for(ClOffset offs: longIrredCls) {
+        Clause * cl = cl_alloc.ptr(offs);
+        assert(no_duplicate_lits((*cl)));
+    }
+    for(auto l: longRedCls) {
+        for(ClOffset offs: l) {
+            Clause * cl = cl_alloc.ptr(offs);
+            assert(no_duplicate_lits((*cl)));
+        }
+    }
+}
+
+inline void CNF::check_clid_correct() const
+{
+    #ifdef STATS_NEEDED
+    for(auto l: longRedCls) {
+        for(ClOffset offs: l) {
+            Clause * cl = cl_alloc.ptr(offs);
+            assert(!(cl->stats.ID == 0 && cl->red()));
+        }
+    }
+    #endif
 }
 
 }

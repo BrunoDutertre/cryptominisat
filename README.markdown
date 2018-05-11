@@ -19,6 +19,9 @@ that it allows for a more efficient system, with assumptions and multiple
 `solve()` calls. A C compatible wrapper is also provided. The python interface provides
 a high-level yet efficient API to use most of the C++ interface with ease.
 
+When citing, always reference our [SAT 2009 conference paper](https://link.springer.com/chapter/10.1007%2F978-3-642-02777-2_24), bibtex record is [here](http://dblp.uni-trier.de/rec/bibtex/conf/sat/SoosNC09).
+
+
 Docker usage
 -----
 
@@ -46,6 +49,8 @@ docker run --rm -v /home/myfolder/myfile.cnf.gz:/f msoos/cryptominisat f
 To build and run locally:
 
 ```
+git clone https://github.com/msoos/cryptominisat.git
+cd cryptominisat
 git submodule update --init
 docker build -t cms .
 cat myfile.cnf | docker run --rm -i cms
@@ -54,6 +59,8 @@ cat myfile.cnf | docker run --rm -i cms
 To build and run the web interface:
 
 ```
+git clone https://github.com/msoos/cryptominisat.git
+cd cryptominisat
 git submodule update --init
 docker build -t cmsweb -f Dockerfile.web .
 docker run --rm -i -p 80:80 cmsweb
@@ -71,7 +78,8 @@ sudo apt-get install build-essential cmake
 sudo apt-get install libzip-dev libboost-program-options-dev libm4ri-dev libsqlite3-dev
 tar xzvf cryptominisat-version.tar.gz
 cd cryptominisat-version
-cmake .
+mkdir build && cd build
+cmake ..
 make
 sudo make install
 sudo ldconfig
@@ -80,11 +88,14 @@ sudo ldconfig
 Compiling in Mac OSX
 -----
 
+First, you must get Homebew from https://brew.sh/ then:
+
 ```
 brew install cmake boost zlib
 tar xzvf cryptominisat-version.tar.gz
 cd cryptominisat-version
-cmake .
+mkdir build && cd build
+cmake ..
 make
 sudo make install
 ```
@@ -127,20 +138,43 @@ C:\cms\build> cmake --build --config Release .
 
 You now have the static binary under `C:\cms\build\Release\cryptominisat5.exe`
 
+Compiling under Cygwin64 in Windows
+-----
+
+This is just a rough guide, but it should work. Compiling with Visual Studio may be easier, and better, though:
+
+```
+get boost from Boost.org e.g. boost_1_66_0.tar.gz
+$ tar xzvf cryptominisat-version.tar.gz
+$ cd cryptominisat-version
+$ mkdir build
+$ cd build
+$ gunzip -c ../../boost_1_66_0.tar.gz | tar -xvof -
+$ cd boost_1_66_0/
+$ ./bootstrap.sh --with-libraries=program_options
+$ ./b2
+$ export BOOST_ROOT=$(pwd)
+$ cd ..
+$ cmake ..
+$ make
+$ make install
+$ cp ./boost_1_66_0/bin.v2/libs/program_options/build/gcc-gnu-6.4.0/release/threadapi-pthread/threading-multi/cygboost_program_options.dll /usr/local/bin
+```
 
 Command-line usage
 -----
 
 Let's take the file:
 ```
-p cnf 2 3
+p cnf 3 3
 1 0
 -2 0
 -1 2 3 0
 ```
 
-The files has 3 clauses and 2 variables, this is reflected in the header
-`p cnf 2 3`. Every clause is ended by '0'. The clauses say: 1 must be True, 2
+The file has 3 variables and 3 clauses, this is reflected in the header
+`p cnf 3 3` which gives the number of variables as the first number and the number of clauses as the second.
+Every clause is ended by '0'. The clauses say: 1 must be True, 2
 must be False, and either 1 has to be False, 2 has to be True or 3 has to be
 True. The only solution to this problem is:
 ```
@@ -149,9 +183,9 @@ s SATISFIABLE
 v 1 -2 3 0
 ```
 
-If the file had contained:
+Which means, that setting variable 1 True, variable 2 False and variable 3 True satisfies the set of constraints (clauses) in the CNF. If the file had contained:
 ```
-p cnf 2 4
+p cnf 3 4
 1 0
 -2 0
 -3 0
@@ -162,15 +196,16 @@ Then there is no solution and the solver returns `s UNSATISFIABLE`.
 
 Python usage
 -----
-The python module must be compiled as per:
+The python module works with both Python 2 and Python 3. It must be compiled as per (notice "python-dev"):
 
 ```
 sudo apt-get install build-essential cmake
 sudo apt-get install libzip-dev libboost-program-options-dev libm4ri-dev libsqlite3-dev
-sudo apt-get install python-setuptools python-dev
+sudo apt-get install python3-setuptools python3-dev
 tar xzvf cryptominisat-version.tar.gz
 cd cryptominisat-version
-cmake .
+mkdir build && cd build
+cmake ..
 make
 sudo make install
 sudo ldconfig
@@ -368,6 +403,7 @@ cd cryptominisat-version
 mkdir build && cd build
 cmake -DUSE_GAUSS=ON ..
 make
+sudo make install
 ```
 
 To use Gaussian elimination, provide a CNF with xors in it (either in CNF or XOR+CNF form) and tune the gaussian parameters. Use `--hhelp` to find all the gaussian elimination options:
@@ -388,15 +424,18 @@ Gauss options:
   --maxnummatrixes arg (=3)   Maximum number of matrixes to treat.
 ```
 
+If any of these options seem to be non-existent, then either you forgot to compile the SAT solver with the above options, or you forgot to re-install it with `sudo make install`.
+
 Testing
 -----
 For testing you will need the GIT checkout and build as per:
 
 ```
-sudo apt-get install build-essential cmake
+sudo apt-get install build-essential cmake git
 sudo apt-get install libzip-dev libboost-program-options-dev libm4ri-dev libsqlite3-dev
-sudo apt-get install git python-pip python-setuptools python-dev
-pip install pip
+sudo apt-get install git python3-pip python3-setuptools python3-dev
+sudo pip3 install --upgrade pip
+sudo pip3 install lit
 git clone https://github.com/msoos/cryptominisat.git
 cd cryptominisat
 git submodule update --init
@@ -413,18 +452,37 @@ Fuzzing
 Build for test as per above, then:
 
 ```
-# you are currently in cryptomnisat/build
-sudo apt-get install valgrind
-cd ../../
-git clone https://github.com/msoos/lingeling-ala
-cd lingeling-ala
-./configure
-make
-sudo cp lingeling /usr/local/bin/
 cd ../cryptominisat/scripts/fuzz/
 ./fuzz_test.py
+```
+
+Using the Machine Learning System
+-----
+This is experimental but should work relatively well:
 
 ```
+git checkout clauseID
+sudo apt-get install build-essential cmake git
+sudo apt-get install libzip-dev libboost-program-options-dev libm4ri-dev libsqlite3-dev
+sudo apt-get install graphviz
+sudo apt-get install python3-pip python3-setuptools python3-dev
+sudo apt-get install python3-numpy
+sudo pip3 install --upgrade pip
+sudo pip3 install lit
+sudo pip3 install scikit-learn pandas scipy
+git clone https://github.com/msoos/cryptominisat.git
+cd cryptominisat
+git submodule update --init
+mkdir build && cd build
+ln -s ../scripts/build_scripts/* .
+ln -s ../scripts/learn/* .
+./build_stats.sh
+sudo make install
+sudo ldconfig
+./test_predict.sh
+```
+
+The prediction datas are now written to the directory `build/test_predict/`. You can use e.g. Weka to examine the CSV found there. Please note that this is under *heavy* development
 
 Configuring a build for a minimal binary&library
 -----
@@ -434,14 +492,18 @@ The following configures the system to build a bare minimal binary&library. It n
 cmake -DONLY_SIMPLE=ON -DNOZLIB=ON -DNOM4RI=ON -DSTATS=OFF -DNOVALGRIND=ON -DENABLE_TESTING=OFF .
 ```
 
-DRAT and ID generation
+Trying different configurations
 -----
+Try solving using different reconfiguration values between 1..15 as per:
 
 ```
-./cryptominisat5 6s153.cnf.gz  --sql 1 --sqlitedb test.db --sqlfull 1 --clid drat.out
+./cryptominisat5 --reconfat 0 --reconf 1 my_hard_problem.cnf
+./cryptominisat5 --reconfat 0 --reconf 2 my_hard_problem.cnf
+...
+./cryptominisat5 --reconfat 0 --reconf 15 my_hard_problem.cnf
 ```
 
-
+These configurations are designed to be relatively orthogonal. Check if any of them solve a lot faster. If it does, try using that for similar problems going forward. Please do come back to the author with what you have found to work best for you.
 
 C usage
 -----

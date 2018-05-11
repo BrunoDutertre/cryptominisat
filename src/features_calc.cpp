@@ -1,5 +1,6 @@
 /******************************************
-Copyright (c) 2016, Mate Soos
+Copyright (c) 2016, Yuri Malitsky and Horst Samulowitz
+Copyright (c) 2018, Mate Soos
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -106,7 +107,7 @@ void SolveFeaturesCalc::for_all_clauses(Function func_each_cl, Function2 func_ea
 
 void SolveFeaturesCalc::fill_vars_cls()
 {
-    feat.numVars = solver->nVars();
+    feat.numVars = solver->get_num_free_vars();
     feat.numClauses = solver->longIrredCls.size() + solver->binTri.irredBins;
     myVars.resize(solver->nVars());
 
@@ -145,7 +146,7 @@ void SolveFeaturesCalc::calculate_clause_stats()
 
         double _pnr = 0.5 + ((2.0 * (double)pos_vars - (double)size) / (2.0 * (double)size));
         feat.pnr_cls_min = std::min(feat.pnr_cls_min, _pnr);
-        feat.pnr_cls_max = std::min(feat.pnr_cls_max, _pnr);
+        feat.pnr_cls_max = std::max(feat.pnr_cls_max, _pnr);
         feat.pnr_cls_mean += _pnr;
     };
     for_all_clauses(func_each_cl, empty_func);
@@ -171,18 +172,18 @@ void SolveFeaturesCalc::calculate_variable_stats()
 
         double _size = myVars[vv].size / (double)feat.numClauses;
         feat.vcg_var_min = std::min(feat.vcg_var_min, _size);
-        feat.vcg_var_max = std::min(feat.vcg_var_max, _size);
+        feat.vcg_var_max = std::max(feat.vcg_var_max, _size);
         feat.vcg_var_mean += _size;
 
         double _pnr = 0.5 + ((2.0 * myVars[vv].numPos - myVars[vv].size)
                              / (2.0 * myVars[vv].size));
         feat.pnr_var_min = std::min(feat.pnr_var_min, _pnr);
-        feat.pnr_var_max = std::min(feat.pnr_var_max, _pnr);
+        feat.pnr_var_max = std::max(feat.pnr_var_max, _pnr);
         feat.pnr_var_mean += _pnr;
 
         double _horn = myVars[vv].horn / (double)feat.numClauses;
-        feat.horn_min = std::min(feat.horn_max, _horn);
-        feat.horn_max = std::min(feat.horn_max, _horn);
+        feat.horn_min = std::min(feat.horn_min, _horn);
+        feat.horn_max = std::max(feat.horn_max, _horn);
         feat.horn_mean += _horn;
     }
 
@@ -295,7 +296,9 @@ void SolveFeaturesCalc::calculate_cl_distributions(
         const Clause& cl = *solver->cl_alloc.ptr(off);
         size_mean += cl.size();
         glue_mean += cl.stats.glue;
-        activity_mean += (double)cl.stats.activity/cla_inc;
+        if (cl.red()) {
+            activity_mean += (double)cl.stats.activity/cla_inc;
+        }
     }
     size_mean /= clauses.size();
     glue_mean /= clauses.size();
@@ -307,7 +310,7 @@ void SolveFeaturesCalc::calculate_cl_distributions(
         const Clause& cl = *solver->cl_alloc.ptr(off);
         size_var += std::pow(size_mean-cl.size(), 2);
         glue_var += std::pow(glue_mean-cl.stats.glue, 2);
-        activity_var += std::pow(activity_mean-cl.stats.activity/cla_inc, 2);
+        activity_var += std::pow(activity_mean-(double)cl.stats.activity/cla_inc, 2);
     }
     size_var /= clauses.size();
     glue_var /= clauses.size();
@@ -320,6 +323,34 @@ void SolveFeaturesCalc::calculate_cl_distributions(
     distrib_data.size_distr_var = size_var;
     distrib_data.activity_distr_mean = activity_mean;
     distrib_data.activity_distr_var = activity_var;
+}
+
+void SolveFeaturesCalc::normalise_values()
+{
+    if (feat.vcg_var_min == std::numeric_limits<double>::max())
+        feat.vcg_var_min = -1;
+    if (feat.vcg_var_max == std::numeric_limits<double>::min())
+        feat.vcg_var_max = -1;
+
+    if (feat.vcg_cls_min  == std::numeric_limits<double>::max())
+        feat.vcg_cls_min = -1;
+    if (feat.vcg_cls_max == std::numeric_limits<double>::min())
+        feat.vcg_cls_max = -1;
+
+    if (feat.pnr_var_min == std::numeric_limits<double>::max())
+        feat.pnr_var_min = -1;
+    if (feat.pnr_var_max == std::numeric_limits<double>::min())
+        feat.pnr_var_max = -1;
+
+    if (feat.horn_min == std::numeric_limits<double>::max())
+        feat.horn_min = -1;
+    if (feat.horn_max == std::numeric_limits<double>::min())
+        feat.horn_max = -1;
+
+    if (feat.pnr_cls_min == std::numeric_limits<double>::max())
+        feat.pnr_cls_min = -1;
+    if (feat.pnr_cls_max == std::numeric_limits<double>::min())
+        feat.pnr_cls_max = -1;
 }
 
 SolveFeatures SolveFeaturesCalc::extract()
@@ -337,16 +368,23 @@ SolveFeatures SolveFeaturesCalc::extract()
         feat.var_cl_ratio = (double)feat.numVars/ (double)feat.numClauses;
     }
 
-    calculate_clause_stats();
-    calculate_variable_stats();
+    if (feat.numClauses > 0 && feat.numVars > 0) {
+        calculate_clause_stats();
+        calculate_variable_stats();
 
-    calculate_extra_clause_stats();
-    calculate_extra_var_stats();
+        calculate_extra_clause_stats();
+        calculate_extra_var_stats();
 
-    calculate_cl_distributions(solver->longRedCls[0], feat.red_cl_distrib);
-    calculate_cl_distributions(solver->longIrredCls, feat.irred_cl_distrib);
+        if (!solver->longRedCls[0].empty()) {
+            calculate_cl_distributions(solver->longRedCls[0], feat.red_cl_distrib);
+        }
+        if (!solver->longIrredCls.empty()) {
+            calculate_cl_distributions(solver->longIrredCls, feat.irred_cl_distrib);
+        }
+    }
+    normalise_values();
 
-    if (solver->conf.verbosity) {
+    if (solver->conf.verbosity > 5) {
         cout << "c [features] extracted"
         << solver->conf.print_times(cpuTime() - start_time)
         << endl;

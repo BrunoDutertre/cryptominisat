@@ -50,7 +50,7 @@ class ClauseCleaner;
 class Prober;
 class OccSimplifier;
 class SCCFinder;
-class DistillerAllWithAll;
+class DistillerLong;
 class DistillerLongWithImpl;
 class StrImplWImplStamp;
 class CalcDefPolars;
@@ -95,16 +95,16 @@ class Solver : public Searcher
         lbool full_model_value (const uint32_t p) const;  ///<Found model value for var
         const vector<lbool>& get_model() const;
         const vector<Lit>& get_final_conflict() const;
+        vector<pair<Lit, Lit> > get_all_binary_xors() const;
 
         void open_file_and_dump_irred_clauses(string fname) const;
         void open_file_and_dump_red_clauses(string fname) const;
-        vector<pair<Lit, Lit> > get_all_binary_xors() const;
 
         static const char* get_version_tag();
         static const char* get_version_sha1();
         static const char* get_compilation_env();
 
-        vector<Lit> get_zero_assigned_lits() const;
+        vector<Lit> get_zero_assigned_lits(const bool backnumber = true, bool only_nvars = false) const;
         void     print_stats(const double cpu_time) const;
         void     print_clause_stats() const;
         size_t get_num_free_vars() const;
@@ -141,7 +141,7 @@ class Solver : public Searcher
         Prober*                prober = NULL;
         InTree*                intree = NULL;
         OccSimplifier*         occsimplifier = NULL;
-        DistillerAllWithAll*   distill_all_with_all = NULL;
+        DistillerLong*         distill_long_cls = NULL;
         DistillerLongWithImpl* dist_long_with_impl = NULL;
         StrImplWImplStamp* dist_impl_with_impl = NULL;
         CompHandler*           compHandler = NULL;
@@ -173,6 +173,9 @@ class Solver : public Searcher
         void new_var(const bool bva = false, const uint32_t orig_outer = std::numeric_limits<uint32_t>::max()) override;
         void new_vars(const size_t n) override;
         void bva_changed();
+        #ifdef USE_GAUSS
+        bool init_all_matrixes();
+        #endif
 
         //Attaching-detaching clauses
         void attachClause(
@@ -217,14 +220,17 @@ class Solver : public Searcher
             , bool addDrat = true
             , const Lit drat_first = lit_Undef
         );
-        template<class T> vector<Lit> clauseBackNumbered(const T& cl) const;
+        template<class T> vector<Lit> clause_outer_numbered(const T& cl) const;
         size_t mem_used() const;
         void dump_memory_stats_to_sql();
         void set_sqlite(string filename);
         //Not Private for testing (maybe could be called from outside)
         void renumber_variables(bool must_renumber = true);
+        SolveFeatures calculate_features();
+        SolveFeatures last_solve_feature;
 
         uint32_t undefine(vector<uint32_t>& trail_lim_vars);
+        vector<Lit> get_toplevel_units_internal(bool outer_numbering) const;
 
         //if set to TRUE, a clause has been removed during add_clause_int
         //that contained "lit, ~lit". So "lit" must be set to a value
@@ -236,7 +242,7 @@ class Solver : public Searcher
         friend class ClauseDumper;
         lbool iterate_until_solved();
         uint64_t mem_used_vardata() const;
-        SolveFeatures calculate_features() const;
+        void check_reconfigure();
         void reconfigure(int val);
         long calc_num_confl_to_do_this_iter(const size_t iteration_num) const;
 
@@ -314,7 +320,7 @@ class Solver : public Searcher
             uint32_t num_fixed;
             bool verbose = false;
         };
-        FindUndef* undef;
+        FindUndef* undef = NULL;
         bool undef_must_fix_var();
         void undef_fill_potentials();
         void undef_unset_potentials();
@@ -395,7 +401,7 @@ inline const BinTriStats& Solver::getBinTriStats() const
 }
 
 template<class T>
-inline vector<Lit> Solver::clauseBackNumbered(const T& cl) const
+inline vector<Lit> Solver::clause_outer_numbered(const T& cl) const
 {
     tmpCl.clear();
     for(size_t i = 0; i < cl.size(); i++) {
@@ -521,6 +527,9 @@ inline bool Solver::prop_at_head() const
 
 inline lbool Solver::model_value (const Lit p) const
 {
+    if (model[p.var()] == l_Undef)
+        return l_Undef;
+
     return model[p.var()] ^ p.sign();
 }
 

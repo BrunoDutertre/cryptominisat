@@ -54,7 +54,7 @@ class VarReplacer
         void new_vars(const size_t n);
         void save_on_var_memory();
         bool replace_if_enough_is_found(const size_t limit = 0, uint64_t* bogoprops = NULL);
-        void print_equivalent_literals(std::ostream *os) const;
+        uint32_t print_equivalent_literals(bool outer_numbering, std::ostream *os = NULL) const;
         void print_some_stats(const double global_cpu_time) const;
         const SCCFinder* get_scc_finder() const;
 
@@ -103,6 +103,7 @@ class VarReplacer
         size_t mem_used() const;
         vector<std::pair<Lit, Lit> > get_all_binary_xors_outer() const;
         vector<uint32_t> get_vars_replacing_others() const;
+        bool get_scc_depth_warning_triggered() const;
 
         void save_state(SimpleOutFile& f) const;
         void load_state(SimpleInFile& f);

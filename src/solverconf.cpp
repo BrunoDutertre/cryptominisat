@@ -29,9 +29,9 @@ using namespace CMSat;
 
 DLL_PUBLIC SolverConf::SolverConf() :
         //Variable activities
-        var_inc_start(1)
-        , var_decay_start(0.8) // 1/0.8 = 1.2 -- large is better for frequent restarts
-        , var_decay_max(0.95) // 1/0.95 = 1.05 -- smaller is better for hard instances
+        var_inc_vsids_start(1)
+        , var_decay_vsids_start(0.8) // 1/0.8 = 1.2 -- large is better for frequent restarts
+        , var_decay_vsids_max(0.95) // 1/0.95 = 1.05 -- smaller is better for hard instances
         , random_var_freq(0)
         , polarity_mode(PolarityMode::polarmode_automatic)
 
@@ -43,11 +43,10 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , inc_max_temp_lev2_red_cls(1.0)      //only used if every_lev2_reduce==0
         , protect_cl_if_improved_glue_below_this_glue_for_one_turn(30)
         , glue_put_lev0_if_below_or_eq(3) // never removed
-        , glue_put_lev1_if_below_or_eq(5) // kept for a while then moved to lev2
+        , glue_put_lev1_if_below_or_eq(6) // kept for a while then moved to lev2
 
 
         , clause_decay(0.999)
-        , min_time_in_db_before_eligible_for_cleaning(5ULL*1000ULL)
         , adjust_glue_if_too_many_low(0.7)
         , min_num_confl_adjust_glue_cutoff(150ULL*1000ULL)
         , guess_cl_effectiveness(0)
@@ -60,22 +59,29 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , do_blocking_restart(1)
         , blocking_restart_trail_hist_length(5000)
         , blocking_restart_multip(1.4)
-        , maple(false)
-        , local_glue_multiplier(0.70)
+        , broken_glue_restart(false)
+        , maple(true)
+        , maple_backtrack(false)
+        , maple_backtrack_mod(3)
+        , modulo_maple_iter(3)
+        , local_glue_multiplier(0.90)
+        , local_backtrack_multiplier(0.90)
         , shortTermHistorySize (50)
         , lower_bound_for_blocking_restart(10000)
-        , more_otf_shrink_with_cache(false)
-        , more_otf_shrink_with_stamp(false)
+        , ratio_glue_geom(4)
+        , more_more_with_cache(false)
+        , more_more_with_stamp(false)
+        , doAlwaysFMinim(false)
 
         //Clause minimisation
         , doRecursiveMinim (true)
         , doMinimRedMore(true)
-        , doAlwaysFMinim   (false)
+        , doMinimRedMoreMore(false)
         , max_glue_more_minim(6)
         , max_size_more_minim(30)
         , more_red_minim_limit_cache(400)
         , more_red_minim_limit_binary(200)
-        , max_num_lits_more_red_min(1)
+        , max_num_lits_more_more_red_min(1)
 
         //Verbosity
         , verbosity        (0)
@@ -85,14 +91,13 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , print_all_restarts (false)
         , verbStats        (0)
         , do_print_times(1)
-        , print_restart_line_every_n_confl(7000)
+        , print_restart_line_every_n_confl(4096)
 
         //Limits
         , maxTime          (std::numeric_limits<double>::max())
-        , maxConfl         (std::numeric_limits<long>::max())
+        , max_confl         (std::numeric_limits<long>::max())
 
         //Glues
-        , update_glues_on_prop(false)
         , update_glues_on_analyze(true)
 
         //OTF
@@ -104,6 +109,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         //SQL
         , dump_individual_search_time(true)
         , dump_individual_restarts_and_clauses(true)
+        , dump_individual_cldata_ratio(0.005)
 
         //Var-elim
         , doVarElim        (true)
@@ -111,12 +117,8 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , do_empty_varelim (true)
         , empty_varelim_time_limitM(300LL)
         , varelim_time_limitM(350)
-        , updateVarElimComplexityOTF(true)
-        , updateVarElimComplexityOTF_limitvars(200)
-        , updateVarElimComplexityOTF_limitavg(40ULL*1000ULL)
-        , var_elim_strategy  (ElimStrategy::heuristic)
-        , varElimCostEstimateStrategy(2)
-        , varElimRatioPerIter(0.60)
+        , varelim_sub_str_limit(600)
+        , varElimRatioPerIter(1.60)
         , skip_some_bve_resolvents(true) //based on gates
         , velim_resolvent_too_large(20)
 
@@ -126,7 +128,8 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , aggressive_elim_time_limitM(300)
 
         //Bounded variable addition
-        , do_bva(true)
+        , do_bva(false)
+        , min_bva_gain(32)
         , bva_limit_per_call(150000)
         , bva_also_twolit_diff(true)
         , bva_extra_lit_and_red_start(0)
@@ -136,7 +139,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , doProbe          (true)
         , doIntreeProbe    (true)
         , probe_bogoprops_time_limitM  (800ULL)
-        , intree_time_limitM(400ULL)
+        , intree_time_limitM(1200ULL)
         , intree_scc_varreplace_time_limitM(30ULL)
         , doBothProp       (true)
         , doTransRed       (true)
@@ -163,19 +166,20 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , max_scc_depth (10000)
 
         //Iterative Alo Scheduling
-        , simplify_at_startup(true)
+        , simplify_at_startup(false)
         , simplify_at_every_startup(false)
         , do_simplify_problem(true)
         , full_simplify_at_startup(false)
         , never_stop_search(false)
         , num_conflicts_of_search(50ULL*1000ULL)
         , num_conflicts_of_search_inc(1.4)
-        , num_conflicts_of_search_inc_max(3)
+        , num_conflicts_of_search_inc_max(10)
         , simplify_schedule_startup(
             "sub-impl,"
             "occ-backw-sub-str, occ-clean-implicit, occ-bve,"
+            "occ-backw-sub-str, occ-xor,"
             "scc-vrepl,"
-            "sub-str-cls-with-bin,"
+            "sub-cls-with-bin,"
             #ifdef USE_GAUSS
             //occ--gauss must be last
             "occ-gauss"
@@ -213,15 +217,14 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , perform_occur_based_simp(true)
         , do_strengthen_with_occur       (true)
         , maxRedLinkInSize (200)
-        , maxOccurIrredMB  (800)
-        , maxOccurRedMB    (800)
+        , maxOccurIrredMB  (2500)
+        , maxOccurRedMB    (600)
         , maxOccurRedLitLinkedM(50)
-        , subsume_gothrough_multip(10.0)
+        , subsume_gothrough_multip(2.0)
 
         //Distillation
-        , distill_queue_by(2)
         , do_distill_clauses(true)
-        , distill_long_irred_cls_time_limitM(10ULL)
+        , distill_long_cls_time_limitM(20ULL)
         , watch_cache_stamp_based_str_time_limitM(30LL)
         , distill_time_limitM(120LL)
 
@@ -237,7 +240,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
 
         //Misc optimisations
         , doStrSubImplicit (true)
-        , subsume_implicit_time_limitM(30LL)
+        , subsume_implicit_time_limitM(100LL)
         , distill_implicit_with_implicit_time_limitM(200LL)
 
         //Gates
@@ -255,10 +258,11 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , independent_vars (NULL)
 
         //Timeouts
-        , orig_global_timeout_multiplier(2.0)
-        , global_timeout_multiplier(1.0)
+        , orig_global_timeout_multiplier(4.0)
+        , global_timeout_multiplier(1.0) // WILL BE UNSET, NOT RELEVANT
         , global_timeout_multiplier_multiplier(1.1)
         , global_multiplier_multiplier_max(3)
+        , var_and_mem_out_mult(1.0)
 
         //misc
         , origSeed(0)
@@ -266,10 +270,11 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , reconfigure_val(0)
         , reconfigure_at(2)
         , preprocess(0)
+        , simulate_drat(false)
         , saved_state_file("savedstate.dat")
 {
     ratio_keep_clauses[clean_to_int(ClauseClean::glue)] = 0;
-    ratio_keep_clauses[clean_to_int(ClauseClean::activity)] = 0.3;
+    ratio_keep_clauses[clean_to_int(ClauseClean::activity)] = 0.44;
 }
 
 

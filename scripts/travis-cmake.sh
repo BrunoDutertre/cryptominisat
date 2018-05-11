@@ -23,16 +23,54 @@
 set -e
 set -x
 
-#license check -- first print and then fail in case of problems
-./utils/licensecheck/licensecheck.pl -m  ./src
-NUM=$(./utils/licensecheck/licensecheck.pl -m  ./src | grep UNK | wc -l)
-if [ $(("$NUM")) != $(("0")) ]; then
-    echo "There are some files without license information!"
-    exit -1
-fi
+# fix TravisCI issue --> https://github.com/travis-ci/travis-ci/issues/8920
+python -c "import fcntl; fcntl.fcntl(1, fcntl.F_SETFL, 0)"
+
+check_license() {
+    #license check -- first print and then fail in case of problems
+    ./utils/licensecheck/licensecheck.pl -m  $1
+    NUM=$(./utils/licensecheck/licensecheck.pl -m  $1 | grep UNK | wc -l)
+    shopt -s extglob
+    NUM="${NUM##*( )}"
+    NUM="${NUM%%*( )}"
+    shopt -u extglob
+    if [ "$NUM" -ne 0 ]; then
+        echo "There are some files without license information!"
+        exit -1
+    fi
+}
+
+check_license_fnames() {
+    #license check -- first print and then fail in case of problems
+    find $1 -type f -name $2 -exec utils/licensecheck/licensecheck.pl -m {} \;
+    NUM=$(find $1 -type f -name $2 -exec utils/licensecheck/licensecheck.pl -m {} \; | grep UNK | wc -l)
+    shopt -s extglob
+    NUM="${NUM##*( )}"
+    NUM="${NUM%%*( )}"
+    shopt -u extglob
+    if [ "$NUM" -ne 0 ]; then
+        echo "There are some files without license information!"
+        exit -1
+    fi
+}
+
+check_license CMakeLists.txt
+check_license ./src
+check_license ./tests/
+check_license ./scripts/fuzz/
+check_license ./scripts/learn/
+check_license ./scripts/aws/
+
+check_license_fnames tests/ CMakeLists.txt
+check_license_fnames src/ CMakeLists.txt
+check_license_fnames scripts/ CMakeLists.txt
 
 NUM=$(./utils/licensecheck/licensecheck.pl -m  ./tests | grep UNK | wc -l)
-if [ $(("$NUM")) != $(("0")) ]; then
+shopt -s extglob
+NUM="${NUM##*( )}"
+NUM="${NUM%%*( )}"
+shopt -u extglob
+if [ "$NUM" -ne 0 ]; then
     echo "There are some files without license information!"
     exit -1
 fi
@@ -42,7 +80,6 @@ set -x
 SOURCE_DIR=$(pwd)
 cd build
 BUILD_DIR=$(pwd)
-
 
 # Note eval is needed so COMMON_CMAKE_ARGS is expanded properly
 case $CMS_CONFIG in
@@ -56,6 +93,12 @@ case $CMS_CONFIG in
     NORMAL)
         if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install libboost-program-options-dev; fi
         eval cmake -DENABLE_TESTING:BOOL=ON \
+                   "${SOURCE_DIR}"
+    ;;
+
+    NORMAL_PYTHON2)
+        if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install libboost-program-options-dev; fi
+        eval cmake -DFORCE_PYTHON2=ON -DENABLE_TESTING:BOOL=ON \
                    "${SOURCE_DIR}"
     ;;
 
@@ -133,7 +176,7 @@ case $CMS_CONFIG in
 
     NOPYTHON)
         if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install libboost-program-options-dev; fi
-        if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get remove -y python2.7-dev python-dev libpython-dev; fi
+        if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get remove -y python3-dev python2.7-dev python-dev libpython-dev; fi
         eval cmake -DENABLE_TESTING:BOOL=ON \
                    "${SOURCE_DIR}"
     ;;
@@ -253,9 +296,17 @@ if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 fi
 
+python --version
+if [ "$CMS_CONFIG" == "NORMAL_PYTHON2" ]; then
+    export MYPYTHON=python2
+else
+    export MYPYTHON=python3
+fi
+echo "MYPYTHON is '${MYPYTHON}'"
+
 if [[ "$CMS_CONFIG" == "NORMAL" ]]; then
     cd pycryptosat/tests/
-    python2 test_pycryptosat.py
+    ${MYPYTHON} test_pycryptosat.py
     cd ../..
 fi
 
@@ -276,6 +327,19 @@ case $CMS_CONFIG in
         echo "\"${CMS_CONFIG}\" Binary no extra testing (sql, xor, etc), skipping this part"
     ;;
 esac
+
+if [ "$CMS_CONFIG" == "NORMAL" ] ; then
+    BACKUP=`pwd`
+    cd
+    ${MYPYTHON} -c "
+import pycryptosat
+a = pycryptosat.Solver()
+a.add_clause([1,2,3])
+print(a.solve())"
+    cd $BACKUP
+fi
+
+
 
 # elimination checks
 # NOTE: minisat doesn't build with clang
@@ -310,10 +374,11 @@ fi
 #do fuzz testing
 if [ "$CMS_CONFIG" != "ONLY_SIMPLE" ] && [ "$CMS_CONFIG" != "ONLY_SIMPLE_STATIC" ] && [ "$CMS_CONFIG" != "WEB" ] && [ "$CMS_CONFIG" != "NOPYTHON" ] && [ "$CMS_CONFIG" != "COVERAGE" ] && [ "$CMS_CONFIG" != "INTREE_BUILD" ] && [ "$CMS_CONFIG" != "STATS" ] && [ "$CMS_CONFIG" != "SQLITE" ] ; then
     cd ../scripts/fuzz/
-    ./fuzz_test.py --novalgrind --small --fuzzlim 30
+    ${MYPYTHON} ./fuzz_test.py --novalgrind --small --fuzzlim 30
 fi
 
-case $CMS_CONFIG in
+if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+    case $CMS_CONFIG in
     WEB)
         #we are now in the main dir, ./src dir is here
         cd ..
@@ -330,11 +395,14 @@ case $CMS_CONFIG in
     STATS)
         ln -s ../scripts/build_scripts/* .
         ln -s ../scripts/learn/* .
-        ./test_id.sh
-        sudo apt-get install -y --force pip graphviz
-        sudo pip install sklearn
-        sudo pip install pandas
-        ./test-predict.sh
+        # ./test_id.sh
+        sudo apt-get install -y --force-yes graphviz
+        # sudo apt-get install -y --force-yes blas
+        # sudo pip3 install numpy
+        # sudo pip3 install scipy
+        # sudo pip3 install sklearn
+        # sudo pip3 install pandas
+        # ./test_predict.sh
     ;;
 
     COVERAGE)
@@ -360,5 +428,6 @@ case $CMS_CONFIG in
     *)
         echo "\"${CMS_CONFIG}\" No further testing"
     ;;
-esac
+    esac
+fi
 

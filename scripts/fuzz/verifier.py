@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2016  Mate Soos
@@ -30,13 +30,14 @@ import os
 import stat
 import time
 import resource
+import locale
 from functools import partial
 
 
 def unique_file(fname_begin, fname_end=".cnf"):
         counter = 1
         while 1:
-            fname = fname_begin + '_' + str(counter) + fname_end
+            fname = "out/" + fname_begin + '_' + str(counter) + fname_end
             try:
                 fd = os.open(
                     fname, os.O_CREAT | os.O_EXCL, stat.S_IREAD | stat.S_IWRITE)
@@ -46,6 +47,9 @@ def unique_file(fname_begin, fname_end=".cnf"):
                 pass
 
             counter += 1
+            if counter > 300:
+                print("Cannot create unique_file, last try was: %s", fname)
+                exit(-1)
 
 
 def setlimits(maxtime):
@@ -113,15 +117,16 @@ class solution_parser:
         tmpfname = unique_file("tmp_for_xor_to_cnf_convert")
         a.convert(fname, tmpfname)
         # execute with the other solver
-        toexec = "lingeling -f %s" % tmpfname
+        toexec = "../../build/tests/minisat/minisat -verb=0 %s" % tmpfname
         print("Solving with other solver: %s" % toexec)
         curr_time = time.time()
         try:
             p = subprocess.Popen(toexec.rsplit(),
                                  stdout=subprocess.PIPE,
-                                 preexec_fn=partial(setlimits, self.options.maxtime))
+                                 preexec_fn=partial(setlimits, self.options.maxtime),
+                                 universal_newlines=True)
         except OSError:
-            print("ERROR: Probably you don't have lingeling installed!")
+            print("ERROR: Minisat didn't run... weird, it's included as a submodule")
             raise
 
         consoleOutput2 = p.communicate()[0]
@@ -246,6 +251,15 @@ class solution_parser:
                         break
                     intvar = int(var)
                     solution[abs(intvar)] = (intvar >= 0)
+                continue
+
+            if (line.strip() == ""):
+                continue
+
+            print("Error! SAT solver output contains a line that is neither 'v' nor 'c' nor 's'!")
+            print("Line is:", line.strip())
+            exit(500)
+
         # print("Parsed values:", solution)
 
         if (ignoreNoSolution is False and

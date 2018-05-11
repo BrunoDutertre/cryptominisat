@@ -25,6 +25,7 @@
 
 import sys
 import os
+import platform
 from distutils.core import setup, Extension
 from distutils import sysconfig
 from distutils.cmd import Command
@@ -42,13 +43,13 @@ def cleanup(dat):
     ret = []
     for elem in dat:
         elem = elem.strip()
-        if elem != "":
+        if elem != "" and not "flto" in elem:
             ret.append(elem)
 
-    if is_apple != "":
-        for x in ret:
-            if x == "-lpython" or x == "-lframework":
-                x = "-undefined dynamic_lookup"
+#    if is_apple != "":
+#        for x in ret:
+#            if x == "-lpython" or x == "-lframework":
+#                x = "-undefined dynamic_lookup"
 
     return ret
     # return []
@@ -73,11 +74,6 @@ def _init_posix(init):
             config_vars['CC'] = 'gcc'
             config_vars['CXX'] = 'g++'
 
-        # FIXME raises hardening-no-fortify-functions lintian warning.
-        else:
-            # Non-Sun needs linkage with g++
-            config_vars['LDSHARED'] = 'g++ -shared -g -W -Wall -Wno-deprecated'
-
         config_vars['CFLAGS'] = '-g -W -Wall -Wno-deprecated -std=c++11'
         config_vars['OPT'] = '-g -W -Wall -Wno-deprecated -std=c++11'
 
@@ -85,7 +81,6 @@ def _init_posix(init):
 
 sysconfig._init_posix = _init_posix(sysconfig._init_posix)
 
-################################################################################
 
 class TestCommand(Command):
     """Call tests with the custom 'python setup.py test' command."""
@@ -117,14 +112,20 @@ class TestCommand(Command):
 
 __version__ = '@PROJECT_VERSION@'
 
+# needed because Mac doesn't make use of runtime_library_dirs
+extra_link_args = list(ldconf)
+if platform.system() == 'Darwin':
+    extra_link_args.append('-Wl,-rpath,'+"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+
 modules = dict(
     name = "pycryptosat",
     sources = ["${CMAKE_CURRENT_SOURCE_DIR}/src/pycryptosat.cpp"],
     define_macros = [('LIBRARY_VERSION', '"' + __LIBRARY_VERSION__ + '"')],
     extra_compile_args = cconf + ['-I${PROJECT_SOURCE_DIR}', '-I${PROJECT_BINARY_DIR}/cmsat5-src'],
-    extra_link_args = ldconf,
+    extra_link_args = extra_link_args,
     language = "c++",
     library_dirs=['.', '${PROJECT_BINARY_DIR}/lib'],
+    runtime_library_dirs=['${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}'],
     libraries = ['cryptominisat5']
 )
 
@@ -140,8 +141,6 @@ setup(
         "Intended Audience :: Developers",
         "Operating System :: OS Independent",
         "Programming Language :: C++",
-        "Programming Language :: Python :: 2",
-        "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.5",
         "License :: OSI Approved :: MIT License",
@@ -150,7 +149,7 @@ setup(
     ext_modules =  [Extension(**modules)],
     description = "Bindings to CryptoMiniSat {} (a SAT solver)".\
         format(__LIBRARY_VERSION__),
-    py_modules = ['pycryptosat'],
+#    py_modules = ['pycryptosat'],
     long_description = open('${CMAKE_CURRENT_SOURCE_DIR}/README.rst').read(),
     cmdclass={
         'test': TestCommand

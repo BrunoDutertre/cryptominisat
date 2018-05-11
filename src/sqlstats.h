@@ -26,6 +26,7 @@ THE SOFTWARE.
 #include "searcher.h"
 #include "clause.h"
 #include "clauseusagestats.h"
+#include "solvefeatures.h"
 
 namespace CMSat {
 
@@ -39,7 +40,8 @@ public:
     {}
 
     virtual void restart(
-        const PropStats& thisPropStats
+        const std::string& restart_type
+        , const PropStats& thisPropStats
         , const SearchStats& thisStats
         , const Solver* solver
         , const Searcher* searcher
@@ -59,7 +61,13 @@ public:
         , double time_passed
     ) = 0;
 
-     virtual void mem_used(
+    virtual void features(
+        const Solver* solver
+        , const Searcher* search
+        , const SolveFeatures& feat
+    ) = 0;
+
+    virtual void mem_used(
         const Solver* solver
         , const string& name
         , const double given_time
@@ -83,7 +91,12 @@ public:
         , size_t decision_level
         , size_t trail_depth
         , uint64_t conflicts_this_restart
+        , const std::string& rest_type
         , const SearchHist& hist
+        , const double last_dec_var_act_0
+        , const double last_dec_var_act_1
+        , const double first_dec_var_act_0
+        , const double first_dec_var_act_1
     ) = 0;
 
     virtual bool setup(const Solver* solver) = 0;

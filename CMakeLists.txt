@@ -23,19 +23,10 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 11)
 
 include (GenerateExportHeader)
-if (NOT WIN32)
-    include (GNUInstallDirs)
-    set(LIBDIR "${CMAKE_INSTALL_LIBDIR}")
-    set(BINDIR "${CMAKE_INSTALL_BINDIR}")
-    set(INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}")
-else()
-    set(BINDIR "bin")
-    set(LIBDIR "lib")
-    set(INCLUDEDIR "include")
-endif()
+include (GNUInstallDirs)
 
-message(STATUS "LIB directory is '${LIBDIR}'")
-message(STATUS "BIN directory is '${BINDIR}'")
+message(STATUS "LIB directory is '${CMAKE_INSTALL_LIBDIR}'")
+message(STATUS "BIN directory is '${CMAKE_INSTALL_BINDIR}'")
 
 if(POLICY CMP0022)
     cmake_policy(SET CMP0022 NEW)
@@ -116,34 +107,11 @@ if (LARGEMEM)
     add_definitions(-DLARGE_OFFSETS)
 endif()
 
-option(SANITIZE "Use Clang sanitizers. This will force using clang++ as the compiler" OFF)
-if (SANITIZE)
-    SET (CMAKE_CXX_COMPILER "clang++")
+macro(add_sanitize_option flagname)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}" )
+endmacro()
 
-    #add_compile_options("-fsanitize=address")
-    add_compile_options("-fsanitize=integer")
-    #add_compile_options("-fsanitize=undefined")
-
-    #add_compile_options("-fsanitize=null")
-    add_compile_options("-fsanitize=alignment")
-    #add_compile_options("-fno-sanitize-recover")
-
-    add_compile_options("-fsanitize=return")
-    add_compile_options("-fsanitize=bounds")
-    add_compile_options("-fsanitize=float-divide-by-zero")
-    add_compile_options("-fsanitize=integer-divide-by-zero")
-    add_compile_options("-fsanitize=unsigned-integer-overflow")
-    add_compile_options("-fsanitize=signed-integer-overflow")
-    add_compile_options("-fsanitize=bool")
-    add_compile_options("-fsanitize=enum")
-    add_compile_options("-fsanitize=float-cast-overflow")
-
-    #add_compile_options("-Weverything")
-    #add_compile_options("-Wshorten-64-to-32")
-    #add_compile_options("-Wweak-vtables")
-    #add_compile_options("-Wsign-conversion")
-    #add_compile_options("-Wconversion")
-endif()
+option(SANITIZE "Use Clang sanitizers. You MUST use clang++ as the compiler for this to work" OFF)
 
 include(CheckCXXCompilerFlag)
 macro(add_cxx_flag_if_supported flagname)
@@ -152,6 +120,35 @@ macro(add_cxx_flag_if_supported flagname)
   if(HAVE_FLAG_${flagname})
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}" )
   endif()
+endmacro()
+
+macro(add_sanitize_flags)
+if (SANITIZE)
+    MESSAGE(WARNING "Using clang sanitizers -- you MUST use clang++ or the compile WILL fail")
+    add_sanitize_option("-fsanitize=address")
+    add_sanitize_option("-fsanitize=integer")
+    add_sanitize_option("-fsanitize=undefined")
+
+    add_sanitize_option("-fsanitize=null")
+    add_sanitize_option("-fsanitize=alignment")
+    #add_sanitize_option("-fno-sanitize-recover")
+
+    add_sanitize_option("-fsanitize=return")
+    add_sanitize_option("-fsanitize=bounds")
+    add_sanitize_option("-fsanitize=float-divide-by-zero")
+    add_sanitize_option("-fsanitize=integer-divide-by-zero")
+    add_sanitize_option("-fsanitize=unsigned-integer-overflow")
+    add_sanitize_option("-fsanitize=signed-integer-overflow")
+    add_sanitize_option("-fsanitize=bool")
+    add_sanitize_option("-fsanitize=enum")
+    add_sanitize_option("-fsanitize=float-cast-overflow")
+
+    #add_sanitize_option("-Weverything")
+    #add_sanitize_option("-Wshorten-64-to-32")
+    #add_sanitize_option("-Wweak-vtables")
+    #add_sanitize_option("-Wsign-conversion")
+    #add_sanitize_option("-Wconversion")
+endif()
 endmacro()
 
 option(USE_GAUSS "Build with every-level GAUSS enabled" OFF)
@@ -180,15 +177,19 @@ if (NOT MSVC)
     add_compile_options( -g)
     add_compile_options( -pthread )
 
-    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-O3>")
+    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-O2>")
     add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-mtune=native>")
 
-    add_compile_options("$<$<CONFIG:RELEASE>:-O3>")
+    add_compile_options("$<$<CONFIG:RELEASE>:-O2>")
     add_compile_options("$<$<CONFIG:RELEASE>:-g0>")
-    add_compile_options("$<$<CONFIG:RELEASE>:-DNDEBUG>")
     add_compile_options("$<$<CONFIG:RELEASE>:-mtune=native>")
 
     add_compile_options("$<$<CONFIG:DEBUG>:-O0>")
+
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -O2")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -O2")
+    endif()
 
 else()
     # see https://msdn.microsoft.com/en-us/library/fwkeyyhe.aspx for details
@@ -205,21 +206,32 @@ else()
 
     add_compile_options("$<$<CONFIG:DEBUG>:/Od>")
 
-    # We statically link to reduce dependencies
-    foreach(flag_var CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
-        if(${flag_var} MATCHES "/MD")
-            string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
-        endif(${flag_var} MATCHES "/MD")
-        if(${flag_var} MATCHES "/MDd")
-            string(REGEX REPLACE "/MDd" "/MTd" ${flag_var} "${${flag_var}}")
-        endif(${flag_var} MATCHES "/MDd")
-    endforeach(flag_var)
+    if (STATICCOMPILE)
+        # We statically link to reduce dependencies
+        foreach(flag_var CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+            # /MD -- Causes the application to use the multithread-specific and DLL-specific version of the run-time library.
+            #        Defines _MT and _DLL and causes the compiler to place the library name MSVCRT.lib into the .obj file.
+            if(${flag_var} MATCHES "/MD")
+                string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
+            endif(${flag_var} MATCHES "/MD")
+
+            # /MDd	-- Defines _DEBUG, _MT, and _DLL and causes the application to use the debug multithread-specific and DLL-specific version of the run-time library.
+            #          It also causes the compiler to place the library name MSVCRTD.lib into the .obj file.
+            if(${flag_var} MATCHES "/MDd")
+                string(REGEX REPLACE "/MDd" "/MTd" ${flag_var} "${${flag_var}}")
+            endif(${flag_var} MATCHES "/MDd")
+        endforeach(flag_var)
+
+        # Creates a multithreaded executable (static) file using LIBCMT.lib.
+        add_compile_options(/MT)
+    endif()
 
     # buffers security check
     add_compile_options(/GS)
 
     # Proper warning level
     add_compile_options(/W1)
+
     # Disable STL used in DLL-boundary warning
     add_compile_options(/wd4251)
     add_compile_options(/D_CRT_SECURE_NO_WARNINGS)
@@ -239,8 +251,6 @@ else()
     # exception handling. c = If used with s (/EHsc), catches C++ exceptions only and tells the compiler to assume that functions declared as extern "C" never throw a C++ exception.
     add_compile_options(/EHsc)
 
-    # Creates a multithreaded executable (static) file using LIBCMT.lib.
-    add_compile_options(/MT)
 
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /INCREMENTAL:NO")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /PDBCOMPRESS")
@@ -258,32 +268,35 @@ if (COVERAGE AND NOT STATICCOMPILE)
 endif()
 
 if (NOT WIN32)
-    add_cxx_flag_if_supported("-Wall")
-    add_cxx_flag_if_supported("-Wextra")
-    add_cxx_flag_if_supported("-Wunused")
-    add_cxx_flag_if_supported("-Wsign-compare")
-    if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
-        add_cxx_flag_if_supported("-fno-omit-frame-pointer")
-    endif()
-    add_cxx_flag_if_supported("-Wtype-limits")
-    add_cxx_flag_if_supported("-Wuninitialized")
-    add_cxx_flag_if_supported("-Wno-deprecated")
-    add_cxx_flag_if_supported("-Wstrict-aliasing")
-    add_cxx_flag_if_supported("-Wpointer-arith")
-    add_cxx_flag_if_supported("-Wheader-guard")
     if(NOT ENABLE_TESTING AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT COVERAGE)
-        add_cxx_flag_if_supported("-fvisibility=hidden")
+        #dd_cxx_flag_if_supported("-fvisibility=hidden")
     endif()
-    add_cxx_flag_if_supported("-Wpointer-arith")
-    add_cxx_flag_if_supported("-Wformat-nonliteral")
-    add_cxx_flag_if_supported("-Winit-self")
-    add_cxx_flag_if_supported("-Wparentheses")
-    add_cxx_flag_if_supported("-Wunreachable-code")
-    add_cxx_flag_if_supported("-ggdb3")
     add_compile_options("-fPIC")
 
-    # add_cxx_flag_if_supported("-flto") # slow compile and not enough benefits
-    #add_cxx_flag_if_supported("-fno-exceptions")
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        #add_cxx_flag_if_supported("-flto")
+    else()
+        add_cxx_flag_if_supported("-mtune=native")
+        add_cxx_flag_if_supported("-Wall")
+        add_cxx_flag_if_supported("-Wextra")
+        add_cxx_flag_if_supported("-Wunused")
+        add_cxx_flag_if_supported("-Wsign-compare")
+        if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+            add_cxx_flag_if_supported("-fno-omit-frame-pointer")
+        endif()
+        add_cxx_flag_if_supported("-Wtype-limits")
+        add_cxx_flag_if_supported("-Wuninitialized")
+        add_cxx_flag_if_supported("-Wno-deprecated")
+        add_cxx_flag_if_supported("-Wstrict-aliasing")
+        add_cxx_flag_if_supported("-Wpointer-arith")
+        add_cxx_flag_if_supported("-Wheader-guard")
+        add_cxx_flag_if_supported("-Wpointer-arith")
+        add_cxx_flag_if_supported("-Wformat-nonliteral")
+        add_cxx_flag_if_supported("-Winit-self")
+        add_cxx_flag_if_supported("-Wparentheses")
+        add_cxx_flag_if_supported("-Wunreachable-code")
+        add_cxx_flag_if_supported("-ggdb3")
+    endif()
 endif()
 
 if (COVERAGE)
@@ -296,13 +309,13 @@ option(IPASIR "Also build IPASIR" ON)
 
 option(LIMITMEM "*Only used for testing*. Limit memory used by CMS through number of variables" OFF)
 if (LIMITMEM)
-    set(LIMITMEM "ON")
+    add_definitions(-DLIMITMEM)
 endif()
 
 # -----------------------------------------------------------------------------
 # Uncomment these for static compilation under Linux (messes up Valgrind)
 # -----------------------------------------------------------------------------
-if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT SANITIZE)
     set(CMAKE_EXE_LINKER_FLAGS " ${CMAKE_EXE_LINKER_FLAGS} -Wl,--discard-all -Wl,--build-id=sha1")
 endif()
 
@@ -310,7 +323,7 @@ if ((${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR (${CMAKE_SYSTEM_NAME} MATCHES "Dar
     if(STATICCOMPILE)
         MESSAGE(STATUS "Compiling for static library use")
         if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -static ")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -Wl,--whole-archive -ldl -lpthread -Wl,--no-whole-archive -static ")
         endif()
 
         SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
@@ -330,6 +343,7 @@ if ((${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR (${CMAKE_SYSTEM_NAME} MATCHES "Dar
         MESSAGE(STATUS "Compiling for dynamic library use")
     endif()
 endif()
+
 if ((${CMAKE_SYSTEM_NAME} MATCHES "Windows") AND (STATICCOMPILE))
     set(Boost_USE_STATIC_LIBS ON)
 endif()
@@ -363,7 +377,7 @@ if (GIT_EXECUTABLE)
 else()
   set(GIT_SHA "GIT-hash-notfound")
 endif()
-set(CMS_FULL_VERSION "5.0.1")
+set(CMS_FULL_VERSION "5.5.0")
 
 string(REPLACE "." ";" CMS_FULL_VERSION_LIST ${CMS_FULL_VERSION})
 SetVersionNumber("PROJECT" ${CMS_FULL_VERSION_LIST})
@@ -395,8 +409,53 @@ if (STATS)
         endif ()
     endif()
 ELSE ()
-    MESSAGE(STATUS "Not compiling detailed statistics. Leads to faster system")
+    MESSAGE(STATUS "Not compiling detailed statistics. The system is faster without them")
 ENDIF ()
+
+# ----------
+# manpage
+# ----------
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    find_program(HELP2MAN_FOUND help2man)
+    if (HELP2MAN_FOUND)
+        if (NOT ONLY_SIMPLE)
+            ADD_CUSTOM_TARGET(man_cms5
+                ALL
+                DEPENDS cryptominisat5
+            )
+
+            ADD_CUSTOM_COMMAND(
+                TARGET man_cms5
+                COMMAND help2man
+                ARGS --version-string=${CMS_FULL_VERSION} --help-option="--hhelp" $<TARGET_FILE:cryptominisat5> -o ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5.1
+            )
+
+            INSTALL(
+                FILES ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5.1
+                DESTINATION ${CMAKE_INSTALL_PREFIX}/man/man1)
+        endif()
+        ADD_CUSTOM_TARGET(man_cms5_simple
+            ALL
+            DEPENDS cryptominisat5_simple
+        )
+
+        ADD_CUSTOM_COMMAND(
+            TARGET man_cms5_simple
+            COMMAND help2man
+            ARGS --version-string=${CMS_FULL_VERSION} --help-option="-h" $<TARGET_FILE:cryptominisat5_simple> -o ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5_simple.1
+        )
+
+        INSTALL(
+            FILES ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5_simple.1
+            DESTINATION ${CMAKE_INSTALL_PREFIX}/man/man1)
+
+        message(STATUS "Manpage will be created and installed")
+    else()
+        MESSAGE(STATUS "Cannot find help2man, not creating manpage")
+    endif()
+else()
+    MESSAGE(STATUS "Not on Linux, not creating manpage")
+endif()
 
 # -----------------------------------------------------------------------------
 # Look for ZLIB (For reading zipped CNFs)
@@ -476,20 +535,42 @@ endmacro()
 # Look for python
 # -----------------------------------------------------------------------------
 option(ENABLE_PYTHON_INTERFACE "Enable Python interface" ON)
+option(FORCE_PYTHON2 OFF)
+if (NOT FORCE_PYTHON2)
+    find_package(PythonInterp 3)
+    find_package(PythonLibs 3)
+    message(STATUS "Python 3 -- PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}")
+    message(STATUS "Python 3 -- PYTHON_LIBRARIES=${PYTHON_LIBRARIES}")
+    message(STATUS "Python 3 -- PYTHON_INCLUDE_DIRS=${PYTHON_INCLUDE_DIRS}")
+    message(STATUS "Python 3 -- PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
+endif()
 
-find_package (PythonInterp 2.7)
-message(STATUS "PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}")
+if (NOT (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND PYTHON_INCLUDE_DIRS))
+    unset(PYTHONLIBS_FOUND CACHE)
+    unset(PYTHON_LIBRARIES CACHE)
+    unset(PYTHON_INCLUDE_PATH CACHE)
+    unset(PYTHON_INCLUDE_DIRS CACHE)
+    unset(PYTHON_DEBUG_LIBRARIES CACHE)
+    unset(PYTHONLIBS_VERSION_STRING CACHE)
 
-find_package(PythonLibs 2.7)
-message(STATUS "PYTHON_LIBRARIES=${PYTHON_LIBRARIES}")
-message(STATUS "PYTHON_INCLUDE_DIRS=${PYTHON_INCLUDE_DIRS}")
-message(STATUS "PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
+    unset(PYTHONINTERP_FOUND CACHE)
+    unset(PYTHON_EXECUTABLE CACHE)
+    unset(PYTHON_VERSION_STRING CACHE)
+
+    message(STATUS "Python 3 not fully found or Python 2 has been forced -- trying Python 2.7")
+    find_package(PythonInterp 2.7)
+    find_package(PythonLibs 2.7)
+
+    message(STATUS "Python 2.7 -- PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}")
+    message(STATUS "Python 2.7 -- PYTHON_LIBRARIES=${PYTHON_LIBRARIES}")
+    message(STATUS "Python 2.7 -- PYTHON_INCLUDE_DIRS=${PYTHON_INCLUDE_DIRS}")
+    message(STATUS "Python 2.7 -- PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
+endif()
 
 #command-line parsing executable needs boost program-options
 if(NOT Boost_FOUND)
     set(ONLY_SIMPLE ON)
     message(STATUS "Only building executable with few command-line options because the boost program_options library were not available")
-    set(ENABLE_TESTING OFF)
 endif()
 
 # -----------------------------------------------------------------------------
@@ -518,7 +599,6 @@ add_custom_target(uninstall
 if (ENABLE_TESTING)
     enable_testing()
 
-
     #use valgrind
     find_program(MEMORYCHECK_COMMAND valgrind)
     if(MEMORYCHECK_COMMAND-NOTFOUND)
@@ -543,7 +623,7 @@ else()
 endif()
 
 if (ENABLE_PYTHON_INTERFACE)
-    if (PYTHON_EXECUTABLE AND PYTHON_LIBRARIES AND PYTHON_INCLUDE_DIRS AND NOT COVERAGE)
+    if (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND PYTHON_INCLUDE_DIRS AND NOT COVERAGE)
         message(STATUS "Found python interpreter, libs and header files")
         message(STATUS "Building python interface")
         add_subdirectory(python pycryptosat)

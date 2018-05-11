@@ -19,7 +19,6 @@
 # 02110-1301, USA.
 
 import sys
-import gzip
 import re
 import ntpath
 import os
@@ -39,13 +38,13 @@ parser.add_option("-n", "--num",
                   dest="num", type=int,
                   help="Number of reconfs")
 parser.add_option("--dropdown",
-                  dest="dropdown", type=float, default=0.05,
+                  dest="dropdown", type=float, default=0.02,
                   help="From traget 1.0 this is subtracted no matter what")
 parser.add_option("--cutoff",
-                  dest="cutoff", type=float, default=0.45,
+                  dest="cutoff", type=float, default=0.50,
                   help="At least this much or higher is needed for +")
 parser.add_option("--divisor",
-                  dest="divisor", type=float, default=3000.0,
+                  dest="divisor", type=float, default=1500.0,
                   help="Time difference is divided by this much and subtracted")
 parser.add_option("--ignorethresh",
                   dest="ignore_threshold", type=float, default=4000.0,
@@ -56,9 +55,11 @@ parser.add_option("--maxscore",
 parser.add_option("--ignore", "-i",
                   dest="ignore", type=str,
                   help="Ignore these reconfs")
+parser.add_option("--verbose", "-r", dest="verbose", default=False,
+                  action="store_true", help="More verbose")
 
 (options, args) = parser.parse_args()
-# print "args:", args
+# print("files to parse are:", args)
 
 ignore = {}
 if options.ignore:
@@ -67,18 +68,18 @@ if options.ignore:
         r = int(r)
         ignore[r] = True
 
-order = ["numVars", "numClauses", "var_cl_ratio", "binary", "trinary", "horn", "horn_mean", "horn_std", "horn_min", "horn_max", "horn_spread", "vcg_var_mean", "vcg_var_std", "vcg_var_min", "vcg_var_max", "vcg_var_spread", "vcg_cls_mean", "vcg_cls_std", "vcg_cls_min", "vcg_cls_max", "vcg_cls_spread", "pnr_var_mean", "pnr_var_std", "pnr_var_min", "pnr_var_max", "pnr_var_spread", "pnr_cls_mean", "pnr_cls_std", "pnr_cls_min", "pnr_cls_max", "pnr_cls_spread", "avg_confl_size", "confl_size_min", "confl_size_max", "avg_confl_glue", "confl_glue_min", "confl_glue_max", "avg_num_resolutions", "num_resolutions_min", "num_resolutions_max", "learnt_bins_per_confl", "learnt_tris_per_confl", "avg_branch_depth", "branch_depth_min", "branch_depth_max", "avg_trail_depth_delta", "trail_depth_delta_min", "trail_depth_delta_max", "avg_branch_depth_delta", "props_per_confl", "confl_per_restart", "decisions_per_conflict", "irred_cl_distrib.glue_distr_mean", "irred_cl_distrib.glue_distr_var", "irred_cl_distrib.size_distr_mean", "irred_cl_distrib.size_distr_var", "irred_cl_distrib.uip_use_distr_mean", "irred_cl_distrib.uip_use_distr_var", "irred_cl_distrib.activity_distr_mean", "irred_cl_distrib.activity_distr_var", "red_cl_distrib.glue_distr_mean", "red_cl_distrib.glue_distr_var", "red_cl_distrib.size_distr_mean", "red_cl_distrib.size_distr_var", "red_cl_distrib.uip_use_distr_mean", "red_cl_distrib.uip_use_distr_var", "red_cl_distrib.activity_distr_mean", "red_cl_distrib.activity_distr_var", "num_gates_found_last", "num_xors_found_last"]
+feat_order = ["numClauses", "binary", "horn", "horn_mean", "horn_std", "horn_min", "horn_max", "horn_spread", "vcg_var_mean", "vcg_var_std", "vcg_var_min", "vcg_var_max", "vcg_var_spread", "vcg_cls_mean", "vcg_cls_std", "vcg_cls_min", "vcg_cls_max", "vcg_cls_spread", "pnr_var_mean", "pnr_var_std", "pnr_var_min", "pnr_var_max", "pnr_var_spread", "pnr_cls_mean", "pnr_cls_std", "pnr_cls_min", "pnr_cls_max", "pnr_cls_spread", "avg_confl_size", "confl_size_min", "confl_size_max", "avg_confl_glue", "confl_glue_min", "confl_glue_max", "avg_num_resolutions", "num_resolutions_min", "num_resolutions_max", "learnt_bins_per_confl", "avg_branch_depth", "branch_depth_min", "branch_depth_max", "avg_trail_depth_delta", "trail_depth_delta_min", "trail_depth_delta_max", "avg_branch_depth_delta", "props_per_confl", "confl_per_restart", "decisions_per_conflict", "irred_cl_distrib.glue_distr_mean", "irred_cl_distrib.glue_distr_var", "irred_cl_distrib.size_distr_mean", "irred_cl_distrib.size_distr_var", "irred_cl_distrib.uip_use_distr_mean", "irred_cl_distrib.uip_use_distr_var", "irred_cl_distrib.activity_distr_mean", "irred_cl_distrib.activity_distr_var", "red_cl_distrib.glue_distr_mean", "red_cl_distrib.glue_distr_var", "red_cl_distrib.size_distr_mean", "red_cl_distrib.size_distr_var", "red_cl_distrib.uip_use_distr_mean", "red_cl_distrib.uip_use_distr_var", "red_cl_distrib.activity_distr_mean", "red_cl_distrib.activity_distr_var"]
 
 f = open("outs/reconf.names", "w")
 f.write("reconf.                     | the target attribute\n\n")
 f.write("name:                     label.\n")
-for o in order:
+for o in feat_order:
     f.write("%s:                     continuous.\n" % o)
 f.write("\nreconf:                 +,-.\n")
 f.close()
 
 if options.num is None:
-    print "ERROR: You must give the number of reconfs"
+    print("ERROR: You must give the number of reconfs")
     exit(-1)
 
 
@@ -88,7 +89,7 @@ def parse_features_line(line):
     dat = {}
 
     name = ""
-    for elem, i in zip(line, xrange(1000)):
+    for elem, i in zip(line, range(1000)):
         elem = elem.strip(":").strip(",")
         if i % 2 == 0:
             name = elem
@@ -107,9 +108,13 @@ def nobody_could_solve_it(reconf_score):
     return True
 
 
-def all_above_fixed_score(reconf_score, score_limit):
+def all_above_fixed_score(reconf_score):
     for x in reconf_score:
-        if x[1] < score_limit:
+        if x[0] in ignore:
+            continue
+
+        if x[1] < options.ignore_threshold:
+            print("-> not ignoring, reconf %d is below ignore threshold" % x[0])
             return False
 
     return True
@@ -119,23 +124,23 @@ def print_features_and_scores(fname, features, reconfs_scores):
     r_s = sorted(reconfs_scores, key=lambda x: x[1])[::-1]
     best_reconf = r_s[0][0]
     best_reconf_score = r_s[0][1]
-    print r_s
+    print("r_s: ", r_s)
 
     if nobody_could_solve_it(r_s):
-        print "Nobody could solve: %s" % fname
+        print("Nobody could solve: %s" % fname)
         return -1, False
 
-    if all_above_fixed_score(r_s, options.ignore_threshold):
-        print "All above score: %s" % (fname)
+    if all_above_fixed_score(r_s):
+        print("All above score: %s" % (fname))
         return -2, False
 
-    print "Calculating +/- for %s" % fname
+    print("Calculating +/- for %s" % fname)
 
-    #calculate final array
+    # calculate final array
     final_array = [0.0]*options.num
     val = 1.0
     best_score = r_s[0][1]
-    for conf_score, i in zip(r_s, xrange(100)):
+    for conf_score, i in zip(r_s, range(100)):
         diff = abs(conf_score[1]-best_score)
         best_score = conf_score[1]
         val -= float(diff)/options.divisor
@@ -148,25 +153,25 @@ def print_features_and_scores(fname, features, reconfs_scores):
         if conf_score[1] > 0:
             final_array[conf_score[0]] = val
 
-    #assemble final string
+    # assemble final string
     string = ""
     string += "%s," % fname
-    for name in order:
+    for name in feat_order:
         string += "%s," % features[name]
 
-    #print to console
+    # print to console
     if True:
         string2 = str(string)
         string2 += "||"
         for a in final_array:
             string2 += "%.1f " % a
 
-        print string2
+        print(string2)
 
-    #print to files
+    # print to files
     origstring = str(string)
     for i in range(options.num):
-        #skip files we don't need to write to
+        # skip files we don't need to write to
         if i in ignore:
             continue
 
@@ -183,8 +188,8 @@ def print_features_and_scores(fname, features, reconfs_scores):
 
 
 def parse_file(fname):
-    f = gzip.open(fname, 'rb')
-    #print "fname orig:", fname
+    f = open(fname, 'r')
+    # print("fname orig:", fname)
     fname_clean = re.sub("cnf.gz-.*", "cnf.gz", fname)
     fname_clean = ntpath.split(fname_clean)[1]
     reconf = 0
@@ -194,14 +199,13 @@ def parse_file(fname):
     score = 0
     for line in f:
         line = line.strip()
-        #print "parsing line:", line
+        #print("parsing line:", line)
         if features is None and "features" in line and "numClauses" in line:
             features = parse_features_line(line)
 
         if "Total time" in line:
             time_used = line.strip().split(":")[1].strip()
             score = int(round(float(time_used)))
-            #score -= score % 1000
             score = options.maxscore-score
 
         if "reconfigured" in line:
@@ -220,22 +224,23 @@ def parse_file(fname):
     if reconf in ignore:
         score = 0
 
-    #print "features:", features
+    # print("features:", features)
     return fname_clean, reconf, features, score
+
 
 all_files = set()
 all_files_scores = {}
 all_files_features = {}
 max_num_features = 0
 for x in args:
-    print "# parsing infile:", x
+    print("# parsing infile:", x)
     fname, reconf, features, score = parse_file(x)
     if fname in all_files:
         if all_files_features[fname] != features:
-            print "different features extracted for fname", fname
-            print "orig:", all_files_features[fname]
-            print "new: ", features
-            print "Keeping the longer one!"
+            print("different features extracted for fname", fname)
+            print("orig:", all_files_features[fname])
+            print("new: ", features)
+            print("Keeping the longer one!")
 
         if all_files_features[fname] is None:
             num_features = 0
@@ -249,18 +254,21 @@ for x in args:
         all_files_features[fname] = features
         all_files_scores[fname] = []
 
-    #print "fname:", fname
+    #print("fname:", fname)
     all_files_scores[fname].append([reconf, score])
 
     sys.stdout.write(".")
     sys.stdout.flush()
 
-print "END--------"
-print "all files:", all_files
-print ""
+print("END--------")
+print("all files:", all_files)
+print("")
+
 outf = []
+outfnames = []
 for i in range(options.num):
     fname = options.outfname + str(i) + ".data"
+    outfnames.append(fname)
     try:
         os.unlink(fname)
     except:
@@ -276,19 +284,22 @@ for x in range(options.num):
     best_reconf[x] = 0
 only_this = dict(best_reconf)
 
+
 for fname in all_files:
-    print "calculating final DATs for CNF ", fname
+    print("")
+    print("calculating final DATs for CNF ", fname)
     if all_files_features[fname] is None:
-        print "solved too early, no features, skipping"
+        print("-> solved too early, no features, skipping")
         continue
 
-    print "all_files_features[fname]:", all_files_features[fname]
+    if options.verbose:
+        print("-> all_files_features[fname]:", all_files_features[fname])
     if "avg_confl_size" not in all_files_features[fname]:
-        print "WARNING This is weird, probably not solved by one (different features than everything else), skipping"
+        print("-> WARNING This is weird, probably not solved by one (different features than everything else), skipping")
         continue
 
     if all_files_features[fname] is None:
-        print "features for file is None: %s" % fname
+        print("-> features for file is None: %s" % fname)
 
     if all_files_features[fname] is not None:
         best, only_this_could_solve_it = print_features_and_scores(fname, all_files_features[fname], all_files_scores[fname])
@@ -299,26 +310,25 @@ for fname in all_files:
         if best == -1:
             best = "nobody_could_solve_it"
 
-        print "best here:", best
+        print("-> best here:", best)
         best_reconf[best] = best_reconf[best] + 1
         if only_this_could_solve_it:
             only_this[best] = only_this[best] + 1
 
-        print ""
-
-print "\n-----------------------------"
-print "best reconfs: "
-for a, b in best_reconf.iteritems():
+print("")
+print("Wrote data files: %s\n" % outfnames)
+print("\n-----------------------------")
+print("best reconfs: ")
+for a, b in best_reconf.items():
     if a not in ignore:
-        print "%-20s : %-3d" % (a, b)
+        print("%-20s : %-3d" % (a, b))
 
-print "\n-----------------------------"
-print "uniquely solved by: "
-for a, b in only_this.iteritems():
+print("\n-----------------------------")
+print("uniquely solved by: ")
+for a, b in only_this.items():
     if a not in ignore:
-        print "%-20s : %-3d" % (a, b)
+        print("%-20s : %-3d" % (a, b))
 
 for i in range(options.num):
     if outf[i] is not None:
         outf[i].close()
-

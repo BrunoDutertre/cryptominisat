@@ -89,22 +89,29 @@ void* ClauseAllocator::allocEnough(
     if (size + needed > capacity) {
         //Grow by default, but don't go under or over the limits
         uint64_t newcapacity = capacity * ALLOC_GROW_MULT;
-        newcapacity = std::max<size_t>(newcapacity, size+needed);
-        newcapacity = std::min<size_t>(newcapacity, MAXSIZE);
         newcapacity = std::max<size_t>(newcapacity, MIN_LIST_SIZE);
+        while (newcapacity < size+needed) {
+            newcapacity *= ALLOC_GROW_MULT;
+        }
+        assert(newcapacity >= size+needed);
+        newcapacity = std::min<size_t>(newcapacity, MAXSIZE);
 
         //Oops, not enough space anyway
         if (newcapacity < size + needed) {
             std::cerr
-            << "ERROR: memory manager can't handle the load"
+            << "ERROR: memory manager can't handle the load."
+#ifndef LARGE_OFFSETS
             << " **PLEASE RECOMPILE WITH -DLARGEMEM=ON**"
+#endif
             << " size: " << size
             << " needed: " << needed
             << " newcapacity: " << newcapacity
             << endl;
             std::cout
-            << "ERROR: memory manager can't handle the load"
+            << "ERROR: memory manager can't handle the load."
+#ifndef LARGE_OFFSETS
             << " **PLEASE RECOMPILE WITH -DLARGEMEM=ON**"
+#endif
             << " size: " << size
             << " needed: " << needed
             << " newcapacity: " << newcapacity
@@ -177,7 +184,7 @@ void ClauseAllocator::clauseFree(Clause* cl)
         uint64_t needed
             = neededbytes/sizeof(BASE_DATA_TYPE) + (bool)(neededbytes % sizeof(BASE_DATA_TYPE));
 
-        if ((ClOffset*)cl == (dataStart + size - needed)) {
+        if (((BASE_DATA_TYPE*)cl + needed) == (dataStart + size)) {
             size -= needed;
             currentlyUsedSize -= needed;
             quick_freed = true;
@@ -333,7 +340,7 @@ void ClauseAllocator::consolidate(
     dataStart = newDataStart;
 
     const double time_used = cpuTime() - myTime;
-    if (solver->conf.verbosity) {
+    if (solver->conf.verbosity >= 2) {
         cout << "c [mem] Consolidated memory ";
         cout << " old size "; print_value_kilo_mega(old_size*sizeof(BASE_DATA_TYPE));
         cout << "B new size"; print_value_kilo_mega(size*sizeof(BASE_DATA_TYPE));

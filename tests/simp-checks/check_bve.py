@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2014  Mate Soos
@@ -64,7 +64,7 @@ if len(args) < 1:
 
 def go_through_cnf(f):
     for line in f:
-        line = line.strip()
+        line = line.decode('ascii').strip()
         if len(line) == 0:
             continue
         if line[0] == "p":
@@ -129,11 +129,15 @@ class MyThread(threading.Thread):
 
         toprint = ""
 
-        toexec = [options.cms_exe, "--zero-exit-status", "--preproc", "1", "--verb", "0"]
+        toexec = [options.cms_exe, "--zero-exit-status",
+                  "--preproc", "1", "--verb", "0"]
         toexec.extend(self.extraopts)
         toexec.extend([fname, simp_fname])
 
         toprint += "Executing: %s\n" % toexec
+        with print_lock:
+            print(toprint)
+        toprint = ""
 
         start = time.time()
         cms_out_fname = "cms-%s.out" % os.path.split(fname)[1]
@@ -184,15 +188,15 @@ class MyThread(threading.Thread):
         limit = float(orig_num_vars)*0.05
         if diff < limit*8 and t_msat > t_cms*4 and t_msat > 20:
             toprint += " * MiniSat didn't timeout, but we did, acceptable difference.\n"
+            with print_lock:
+                print(toprint)
             return 0
 
         if diff > limit:
             toprint += "*** ERROR: No. vars difference %d is more than 5%% " % diff
             toprint += "of original no. of vars, %d\n" % limit
-            return 1
-
-        if t_cms > (t_msat*2 + 8):
-            toprint += "*** ERROR: Time difference %d is too big!\n" % (t_cms-t_msat)
+            with print_lock:
+                print(toprint)
             return 1
 
         toprint += "------------------[ thread %d ]------------------------" % self.threadID

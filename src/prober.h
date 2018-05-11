@@ -104,9 +104,10 @@ class Prober {
                     , "s/call"
                 );
 
+                int64_t unused_time = ((int64_t)timeAllocated - (int64_t)(propStats.bogoProps + propStats.otfHyperTime));
                 print_stats_line("c unused Mega BP+HP"
-                    , (double)(timeAllocated - (propStats.bogoProps + propStats.otfHyperTime))/(1000.0*1000.0)
-                    , ratio_for_stat(cpu_time, propStats.bogoProps + propStats.otfHyperTime)*(double)(timeAllocated - (propStats.bogoProps + propStats.otfHyperTime))
+                    , (double)unused_time/(1000.0*1000.0)
+                    , ratio_for_stat(cpu_time, propStats.bogoProps + propStats.otfHyperTime)*(double)unused_time
                     , "est. secs"
                 );
 
@@ -218,14 +219,14 @@ class Prober {
         void checkOTFRatio();
         uint64_t limit_used() const;
         void reset_stats_and_state();
-        uint64_t calc_numpropstodo();
+        uint64_t calc_num_props_limit();
         void clean_clauses_before_probe();
-        uint64_t update_numpropstodo_based_on_prev_performance(uint64_t numPropsTodo);
+        uint64_t update_num_props_limit_based_on_prev_perf(uint64_t num_props_limit);
         void clean_clauses_after_probe();
-        void check_if_must_disable_otf_hyperbin_and_tred(const uint64_t numPropsTodo);
+        void check_if_must_disable_otf_hyperbin_and_tred(const uint64_t num_props_limit);
         void check_if_must_disable_cache_update();
         vector<uint32_t> randomize_possible_choices();
-        void update_and_print_stats(const double myTime, const uint64_t numPropsTodo);
+        void update_and_print_stats(const double myTime, const uint64_t num_props_limit);
         bool check_timeout_due_to_hyperbin();
 
         //For bothprop
@@ -237,7 +238,7 @@ class Prober {
         void clear_up_before_first_set();
 
         void update_cache(Lit thisLit, Lit lit, size_t numElemsSet);
-        void check_and_set_both_prop(uint32_t var, bool first);
+        void check_and_set_both_prop(Lit probed_lit, uint32_t var, bool first);
         void add_rest_of_lits_to_cache(Lit lit);
 
         //For hyper-bin resolution

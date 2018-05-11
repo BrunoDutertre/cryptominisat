@@ -145,7 +145,7 @@ void StrImplWImplStamp::strengthen_bin_with_bin(
         assert(!lits.empty());
         if (lits.size() == 1) {
             str_impl_data.toEnqueue.push_back(lits[0]);
-            (*solver->drat) << lits[0] << fin;
+            (*solver->drat) << add <<  lits[0] << fin;
 
             str_impl_data.remLitFromBin++;
             str_impl_data.stampRem++;
@@ -184,7 +184,7 @@ void StrImplWImplStamp::strengthen_bin_with_bin(
     if (rem) {
         str_impl_data.remLitFromBin++;
         str_impl_data.toEnqueue.push_back(lit);
-        (*solver->drat) << lit << fin;
+        (*solver->drat) << add << lit << fin;
     }
     *j++ = *i;
 }
@@ -194,7 +194,7 @@ void StrImplWImplStamp::StrImplicitData::print(
     , const double time_used
     , const int64_t timeAvailable
     , const int64_t orig_time
-    , Solver* solver
+    , Solver* _solver
 ) const {
     bool time_out = timeAvailable <= 0;
     const double time_remain = float_div(timeAvailable, orig_time);
@@ -204,13 +204,13 @@ void StrImplWImplStamp::StrImplicitData::print(
     << " lit bin: " << remLitFromBin
     << " (by stamp: " << stampRem << ")"
     << " set-var: " << trail_diff
-    << solver->conf.print_times(time_used, time_out, time_remain)
+    << _solver->conf.print_times(time_used, time_out, time_remain)
     << " w-visit: " << numWatchesLooked
     << endl;
 
-    if (solver->sqlStats) {
-        solver->sqlStats->time_passed(
-            solver
+    if (_solver->sqlStats) {
+        _solver->sqlStats->time_passed(
+            _solver
             , "implicit str"
             , time_used
             , time_out

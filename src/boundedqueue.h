@@ -40,10 +40,10 @@ template <class T, class T2 = uint64_t>
 class bqueue {
     //Only stores info for N elements
     vector<T>  elems;
-    size_t first;
-    size_t last;
-    size_t maxsize; //max number of history elements
-    size_t queuesize; // Number of current elements (must be < maxsize !)
+    uint32_t first;
+    uint32_t last;
+    uint32_t maxsize; //max number of history elements
+    uint32_t queuesize; // Number of current elements (must be < maxsize !)
     T2  sumofqueue;
     #ifdef STATS_NEEDED
     AvgCalc<T, T2> longTermAvg;
@@ -103,6 +103,28 @@ public:
     const AvgCalc<T,T2>& getLongtTerm() const
     {
         return longTermAvg;
+    }
+
+    T prev(int32_t p) const
+    {
+        if (p > (int32_t)queuesize)
+            return 0;
+
+        uint32_t e;
+        if (first > 0) {
+            e = first-1;
+        } else {
+            e = maxsize-1;
+        }
+
+        while(p-- > 0) {
+            if (e == 0) {
+                e = maxsize-1;
+            } else {
+                e--;
+            }
+        }
+        return elems[e];
     }
     #endif
 
