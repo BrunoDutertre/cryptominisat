@@ -237,18 +237,18 @@ bool ClauseCleaner::satisfied(const Clause& cl) const
     return false;
 }
 
-void ClauseCleaner::ImplicitData::update_solver_stats(Solver* solver)
+void ClauseCleaner::ImplicitData::update_solver_stats(Solver* s)
 {
     for(const BinaryClause& bincl: toAttach) {
-        assert(solver->value(bincl.getLit1()) == l_Undef);
-        assert(solver->value(bincl.getLit2()) == l_Undef);
-        solver->attach_bin_clause(bincl.getLit1(), bincl.getLit2(), bincl.isRed());
+        assert(s->value(bincl.getLit1()) == l_Undef);
+        assert(s->value(bincl.getLit2()) == l_Undef);
+        s->attach_bin_clause(bincl.getLit1(), bincl.getLit2(), bincl.isRed());
     }
 
     assert(remNonLBin % 2 == 0);
     assert(remLBin % 2 == 0);
-    solver->binTri.irredBins -= remNonLBin/2;
-    solver->binTri.redBins -= remLBin/2;
+    s->binTri.irredBins -= remNonLBin/2;
+    s->binTri.redBins -= remLBin/2;
 }
 
 void ClauseCleaner::clean_clauses_pre()

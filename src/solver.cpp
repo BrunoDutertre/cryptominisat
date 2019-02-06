@@ -1705,7 +1705,9 @@ lbool Solver::iterate_until_solved()
         if (num_confl <= 0) {
             break;
         }
-        status = Searcher::solve(num_confl, iteration_num);
+	// BD: iteration_num is not used and causes a compilation warning
+	//        status = Searcher::solve(num_confl, iteration_num);
+	status = Searcher::solve(num_confl);
 
         //Check for effectiveness
         check_recursive_minimization_effectiveness(status);

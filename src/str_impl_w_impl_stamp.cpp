@@ -202,12 +202,12 @@ void StrImplWImplStamp::strengthen_bin_with_bin(
 void StrImplWImplStamp::StrImplicitData::print(
     const size_t trail_diff
     , const double time_used
-    , const int64_t timeAvailable
+    , const int64_t time_available
     , const int64_t orig_time
     , Solver* _solver
 ) const {
-    bool time_out = timeAvailable <= 0;
-    const double time_remain = float_div(timeAvailable, orig_time);
+    bool time_out = time_available <= 0;
+    const double time_remain = float_div(time_available, orig_time);
 
     cout
     << "c [impl str]"

@@ -818,13 +818,13 @@ void SubsumeStrengthen::finishedRun()
     globalstats += runStats;
 }
 
-void SubsumeStrengthen::Stats::print_short(const Solver* solver) const
+void SubsumeStrengthen::Stats::print_short(const Solver* s) const
 {
     cout << "c [subs] long"
     << " subBySub: " << subsumedBySub
     << " subByStr: " << subsumedByStr
     << " lits-rem-str: " << litsRemStrengthen
-    << solver->conf.print_times(subsumeTime+strengthenTime)
+    << s->conf.print_times(subsumeTime+strengthenTime)
     << endl;
 }
 

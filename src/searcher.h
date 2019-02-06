@@ -73,10 +73,7 @@ class Searcher : public HyperEngine
         ///////////////////////////////
         // Solving
         //
-        lbool solve(
-            uint64_t max_confls
-            , const unsigned upper_level_iteration_num
-        );
+        lbool solve(uint64_t max_confls);
         void finish_up_solve(lbool status);
         void reduce_db_if_needed();
         bool clean_clauses_if_needed();

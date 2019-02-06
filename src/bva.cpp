@@ -577,10 +577,10 @@ bool BVA::add_longer_clause(const Lit new_lit, const OccurClause& cl)
     return solver->okay();
 }
 
-string BVA::PotentialClause::to_string(const Solver* solver) const
+string BVA::PotentialClause::to_string(const Solver* s) const
 {
     std::stringstream ss;
-    ss << solver->watched_to_string(occur_cl.lit, occur_cl.ws)
+    ss << s->watched_to_string(occur_cl.lit, occur_cl.ws)
     << " -- (diff) lit: " << lits.lit1 << ", " << lits.lit2;
 
     return ss.str();

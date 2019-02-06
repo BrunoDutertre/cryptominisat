@@ -1185,7 +1185,7 @@ void VarReplacer::Stats::print(const size_t nVars) const
         cout << "c --------- VAR REPLACE STATS END ----------" << endl;
 }
 
-void VarReplacer::Stats::print_short(const Solver* solver) const
+void VarReplacer::Stats::print_short(const Solver* s) const
 {
     cout
     << "c [vrep]"
@@ -1194,7 +1194,7 @@ void VarReplacer::Stats::print_short(const Solver* solver) const
     << " rem-bin-cls " << removedBinClauses
     << " rem-long-cls " << removedLongClauses
     << " BP " << bogoprops/(1000*1000) << "M"
-    << solver->conf.print_times(cpu_time)
+    << s->conf.print_times(cpu_time)
     << endl;
 }
 
