@@ -28,6 +28,7 @@ THE SOFTWARE.
 #include <structmember.h>
 #include <limits>
 #include <cassert>
+#include <cinttypes>
 #include <cryptominisat5/cryptominisat.h>
 using namespace CMSat;
 
@@ -129,7 +130,7 @@ static SATSolver* setup_solver(PyObject *args, PyObject *kwds)
     return cmsat;
 }
 
-static int convert_lit_to_sign_and_var(PyObject* lit, long& var, bool& sign)
+static int convert_lit_to_sign_and_var(PyObject* lit, uint32_t& var, bool& sign)
 {
     if (!IS_INT(lit))  {
         PyErr_SetString(PyExc_TypeError, "integer expected !");
@@ -149,7 +150,7 @@ static int convert_lit_to_sign_and_var(PyObject* lit, long& var, bool& sign)
     }
 
     sign = (val < 0);
-    var = std::abs(val) - 1;
+    var = (uint32_t) (std::abs(val) - 1);
 
     return 1;
 }
@@ -167,7 +168,7 @@ static int parse_clause(
 
     PyObject *lit;
     while ((lit = PyIter_Next(iterator)) != NULL) {
-        long var;
+        uint32_t var;
         bool sign;
         int ret = convert_lit_to_sign_and_var(lit, var, sign);
         Py_DECREF(lit);
@@ -177,7 +178,7 @@ static int parse_clause(
         }
 
         if (var >= self->cmsat->nVars()) {
-            for(long i = (long)self->cmsat->nVars(); i <= var ; i++) {
+            for(uint32_t i = self->cmsat->nVars(); i <= var ; i++) {
                 self->cmsat->new_var();
             }
         }
@@ -205,7 +206,7 @@ static int parse_xor_clause(
 
     PyObject *lit;
     while ((lit = PyIter_Next(iterator)) != NULL) {
-        long var;
+        uint32_t var;
         bool sign;
         int ret = convert_lit_to_sign_and_var(lit, var, sign);
         Py_DECREF(lit);
@@ -220,7 +221,7 @@ static int parse_xor_clause(
         }
 
         if (var >= self->cmsat->nVars()) {
-            for(long i = (long)self->cmsat->nVars(); i <= var ; i++) {
+            for(uint32_t i = self->cmsat->nVars(); i <= var ; i++) {
                 self->cmsat->new_var();
             }
         }
@@ -262,7 +263,6 @@ Start getting clauses."
 static PyObject* get_next_small_clause(Solver *self, PyObject *args, PyObject *kwds)
 {
     static char* kwlist[] = {NULL};
-    PyObject *max_len;
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist)) {
         return NULL;
     }
@@ -296,7 +296,6 @@ End getting clauses."
 static PyObject* end_getting_small_clauses(Solver *self, PyObject *args, PyObject *kwds)
 {
     static char* kwlist[] = {NULL};
-    PyObject *max_len;
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist)) {
         return NULL;
     }
@@ -503,7 +502,7 @@ static int parse_assumption_lits(PyObject* assumptions, SATSolver* cmsat, std::v
 
     PyObject *lit;
     while ((lit = PyIter_Next(iterator)) != NULL) {
-        long var;
+        uint32_t var;
         bool sign;
         int ret = convert_lit_to_sign_and_var(lit, var, sign);
         Py_DECREF(lit);
@@ -514,7 +513,7 @@ static int parse_assumption_lits(PyObject* assumptions, SATSolver* cmsat, std::v
 
         if (var >= cmsat->nVars()) {
             Py_DECREF(iterator);
-            PyErr_Format(PyExc_ValueError, "Variable %ld not used in clauses", var+1);
+            PyErr_Format(PyExc_ValueError, "Variable %" PRIu32 " not used in clauses", var+1);
             return 0;
         }
 
