@@ -49,7 +49,6 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , clause_decay(0.999)
         , adjust_glue_if_too_many_low(0.7)
         , min_num_confl_adjust_glue_cutoff(150ULL*1000ULL)
-        , guess_cl_effectiveness(0)
 
         //maple
         , maple(true)
@@ -89,7 +88,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , print_all_restarts (false)
         , verbStats        (0)
         , do_print_times(1)
-        , print_restart_line_every_n_confl(4096)
+        , print_restart_line_every_n_confl(8192)
 
         //Limits
         , maxTime          (std::numeric_limits<double>::max())
@@ -102,6 +101,12 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , otfHyperbin      (true)
         , doOTFSubsume     (false)
         , doOTFSubsumeOnlyAtOrBelowGlue(5)
+
+        //decision-based clause generation. These values have been validated
+        //see 8099966.wlm01
+        , do_decision_based_cl(1)
+        , decision_based_cl_max_levels(9)
+        , decision_based_cl_min_learned_size(50)
 
         //SQL
         , dump_individual_restarts_and_clauses(true)
@@ -117,6 +122,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , varElimRatioPerIter(1.60)
         , skip_some_bve_resolvents(true) //based on gates
         , velim_resolvent_too_large(20)
+        , var_linkin_limit_MB(1000)
 
         //Subs, str limits for simplifier
         , subsumption_time_limitM(300)
@@ -153,9 +159,9 @@ DLL_PUBLIC SolverConf::SolverConf() :
 
         //XOR
         , doFindXors       (true)
-        , maxXorToFind     (5)
+        , maxXorToFind     (7)
+        , maxXorToFindSlow (5)
         , useCacheWhenFindingXors(false)
-        , doEchelonizeXOR  (true)
         , maxXORMatrix     (400ULL)
         #ifndef USE_GAUSS
         , xor_finder_time_limitM(50)
@@ -183,9 +189,12 @@ DLL_PUBLIC SolverConf::SolverConf() :
             "sub-impl,"
             "occ-backw-sub-str, occ-clean-implicit, occ-bve,"
             "occ-backw-sub-str, occ-xor,"
+            "cl-consolidate," //consolidate after OCC
             "scc-vrepl,"
             "sub-cls-with-bin,"
         )
+
+        //validated with run 8114195.wlm01
         , simplify_schedule_nonstartup(
             "handle-comps,"
             "scc-vrepl, cache-clean, cache-tryboth,"
@@ -194,6 +203,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
             "scc-vrepl, sub-impl, str-impl, sub-impl,"
             "occ-backw-sub-str, occ-clean-implicit, occ-bve, occ-bva, "//occ-gates,"
             "occ-xor,"
+            "cl-consolidate," //consolidate after OCC
             "str-impl, cache-clean, sub-str-cls-with-bin, distill-cls,"
             "scc-vrepl, check-cache-size, renumber,"
         )
@@ -204,6 +214,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
             "sub-str-cls-with-bin, distill-cls, scc-vrepl, sub-impl,"
             "occ-backw-sub-str, occ-xor, occ-clean-implicit, occ-bve, occ-bva,"
             //"occ-gates,"
+            "cl-consolidate," //consolidate after OCC
             "str-impl, cache-clean, sub-str-cls-with-bin, distill-cls, scc-vrepl, sub-impl,"
             "str-impl, sub-impl, sub-str-cls-with-bin,"
             "intree-probe, probe,"
@@ -228,6 +239,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         //Memory savings
         , doRenumberVars   (true)
         , doSaveMem        (true)
+        , full_watch_consolidate_every_n_confl (4ULL*1000ULL*1000ULL) //validated in run 8113323.wlm01
 
         //Component finding
         , doCompHandler    (false)
@@ -268,6 +280,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , reconfigure_at(2)
         , preprocess(0)
         , simulate_drat(false)
+        , need_decisions_reaching(false)
         , saved_state_file("savedstate.dat")
 {
     ratio_keep_clauses[clean_to_int(ClauseClean::glue)] = 0;

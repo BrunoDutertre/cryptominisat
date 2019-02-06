@@ -48,7 +48,7 @@ def unique_file(fname_begin, fname_end=".cnf"):
 
             counter += 1
             if counter > 300:
-                print("Cannot create unique_file, last try was: %s", fname)
+                print("Cannot create unique_file, last try was: %s" % fname)
                 exit(-1)
 
 
@@ -455,9 +455,10 @@ class solution_parser:
 
     def _find_largest_debuglib_part(self, fname):
         largestPart = 0
-        dirList2 = os.listdir(".")
+        dirList2 = os.listdir("out/.")
+        fname_no_out = fname.replace("out/", "")
         for fname_debug in dirList2:
-            if fnmatch.fnmatch(fname_debug, "%s-debugLibPart*.output" % fname):
+            if fnmatch.fnmatch(fname_debug, "%s-debugLibPart*.output" % fname_no_out):
                 largestPart += 1
 
         return largestPart

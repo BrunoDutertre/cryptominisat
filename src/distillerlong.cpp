@@ -45,7 +45,7 @@ DistillerLong::DistillerLong(Solver* _solver) :
     solver(_solver)
 {}
 
-bool DistillerLong::distill(const bool red)
+bool DistillerLong::distill(const bool red, bool fullstats)
 {
     assert(solver->ok);
     numCalls++;
@@ -71,7 +71,7 @@ bool DistillerLong::distill(const bool red)
 end:
     runStats += other;
     globalStats += runStats;
-    if (solver->conf.verbosity) {
+    if (solver->conf.verbosity && fullstats) {
         if (solver->conf.verbosity >= 3)
             runStats.print(solver->nVars());
         else
@@ -428,7 +428,6 @@ ClOffset DistillerLong::try_distill_clause_and_return_new(
             << "c --> orig shortened cl:" << cl << endl;
         }
         #endif
-        runStats.numClShorten++;
         maxNumProps -= 20;
         lits.clear();
         if (True_confl) {

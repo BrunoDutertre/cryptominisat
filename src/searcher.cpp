@@ -29,6 +29,7 @@ THE SOFTWARE.
 #include "clausecleaner.h"
 #include "propbyforgraph.h"
 #include <algorithm>
+#include <sstream>
 #include <cstddef>
 #include <cmath>
 #include <ratio>
@@ -1220,6 +1221,7 @@ lbool Searcher::search()
             if (!update_bogoprops) {
                 llbool ret = Gauss_elimination();
                 if (ret == l_Continue) {
+                    check_need_restart();
                     continue;
                 //TODO conflict should be goto-d to "confl" label
                 } else if (ret != l_Nothing) {
@@ -1314,7 +1316,7 @@ lbool Searcher::new_decision()
     // Increase decision level and enqueue 'next'
     assert(value(next) == l_Undef);
     new_decision_level();
-    enqueue(next);
+    enqueue<update_bogoprops>(next);
 
     return l_Undef;
 }
@@ -1382,6 +1384,7 @@ void Searcher::check_need_restart()
     }
 }
 
+template<bool update_bogoprops>
 void Searcher::add_otf_subsume_long_clauses()
 {
     //Hande long OTF subsumption
@@ -1413,7 +1416,7 @@ void Searcher::add_otf_subsume_long_clauses()
 
         if (at == 0) {
             //If none found, we have a propagating clause_t
-            enqueue(cl[0], decisionLevel() == 0 ? PropBy() : PropBy(offset));
+            enqueue<update_bogoprops>(cl[0], decisionLevel() == 0 ? PropBy() : PropBy(offset));
 
             //Drat
             if (decisionLevel() == 0) {
@@ -1436,6 +1439,7 @@ void Searcher::add_otf_subsume_long_clauses()
     otf_subsuming_long_cls.clear();
 }
 
+template<bool update_bogoprops>
 void Searcher::add_otf_subsume_implicit_clause()
 {
     //Handle implicit OTF subsumption
@@ -1480,7 +1484,7 @@ void Searcher::add_otf_subsume_implicit_clause()
             }
 
             //Enqueue this literal, finally
-            enqueue(
+            enqueue<update_bogoprops>(
                 it->lits[0]
                 , by
             );
@@ -1829,8 +1833,9 @@ bool Searcher::handle_conflict(const PropBy confl)
     //Add decision-based clause in case it's short
     decision_clause.clear();
     if (!update_bogoprops
-        && learnt_clause.size() > 50 //TODO MAGIC parameter
-        && decisionLevel() <= 9
+        && conf.do_decision_based_cl
+        && learnt_clause.size() > conf.decision_based_cl_min_learned_size
+        && decisionLevel() <= conf.decision_based_cl_max_levels
         && decisionLevel() >= 2
     ) {
         for(int i = (int)trail_lim.size()-1; i >= 0; i--) {
@@ -1851,8 +1856,8 @@ bool Searcher::handle_conflict(const PropBy confl)
     uint32_t old_decision_level = decisionLevel();
     cancelUntil<true, update_bogoprops>(backtrack_level);
 
-    add_otf_subsume_long_clauses();
-    add_otf_subsume_implicit_clause();
+    add_otf_subsume_long_clauses<update_bogoprops>();
+    add_otf_subsume_implicit_clause<update_bogoprops>();
     print_learning_debug_info();
     assert(value(learnt_clause[0]) == l_Undef);
     glue = std::min<uint32_t>(glue, std::numeric_limits<uint32_t>::max());
@@ -2262,7 +2267,7 @@ lbool Searcher::solve(
             solver->conf.do_distill_clauses &&
             sumConflicts > next_distill
         ) {
-            if (!solver->distill_long_cls->distill(true)) {
+            if (!solver->distill_long_cls->distill(true, false)) {
                 status = l_False;
                 goto end;
             }
@@ -2388,7 +2393,21 @@ void Searcher::finish_up_solve(const lbool status)
         check_order_heap_sanity();
         #endif
         model = assigns;
-        full_model = assigns;
+
+        if (conf.need_decisions_reaching) {
+            for(size_t i = 0; i < trail_lim.size(); i++) {
+                size_t at = trail_lim[i];
+
+                //we need this due to dummy decision levels
+                //that could create a situation where new_decision_level()
+                //has been called, but then no variable needs to be decided
+                //for SAT.
+                if (at < trail.size()) {
+                    decisions_reaching_model.push_back(trail[at]);
+                }
+            }
+        }
+
         if (conf.greedy_undef) {
             assert(false && "Greedy undef is broken");
             vector<uint32_t> trail_lim_vars;
@@ -3095,23 +3114,30 @@ void Searcher::update_var_decay_vsids()
     }
 }
 
-void Searcher::consolidate_watches()
+void Searcher::consolidate_watches(const bool full)
 {
     double t = cpuTime();
-    watches.consolidate();
+    if (full) {
+        watches.full_consolidate();
+    } else {
+        watches.consolidate();
+    }
     double time_used = cpuTime() - t;
 
     if (conf.verbosity) {
         cout
-        << "c [consolidate]"
+        << "c [consolidate] "
+        << (full ? "full" : "mini")
         << conf.print_times(time_used)
         << endl;
     }
 
+    std::stringstream ss;
+    ss << "consolidate " << (full ? "full" : "mini") << " watches";
     if (sqlStats) {
         sqlStats->time_passed_min(
             solver
-            , "consolidate watches"
+            , ss.str()
             , time_used
         );
     }
@@ -3191,33 +3217,6 @@ void Searcher::read_long_cls(
     }
 }
 
-unsigned Searcher::guess_clause_array(
-    const ClauseStats& /*cl_stats*/
-    , uint32_t /*backtrack_lev*/
-) const {
-    /*
-    uint32_t votes = 0;
-    //double trail_depth_rel = (double)trail.size()/hist.trailDepthHistLT.avg();
-    double dec_lev_rel = (double)decisionLevel()/hist.decisionLevelHistLT.avg();
-    if (dec_lev_rel < 0.10) {
-        votes++;
-    }
-
-    double backtrack_lev_rel = (double)backtrack_lev/hist.decisionLevelHistLT.avg();
-    if (backtrack_lev_rel < 0.10) {
-        votes++;
-    }
-
-    if (antec_data.glue_long_reds.avg() > 12) {
-        votes += 1;
-    }
-
-    if (votes > 2) {
-        return true;
-    }*/
-    return false;
-}
-
 void Searcher::write_binary_cls(
     SimpleOutFile& f
     , bool red
@@ -3268,7 +3267,6 @@ void Searcher::save_state(SimpleOutFile& f, const lbool status) const
     f.put_vector(var_act_vsids);
     f.put_vector(var_act_maple);
     f.put_vector(model);
-    f.put_vector(full_model);
     f.put_vector(conflict);
 
     //Clauses
@@ -3297,7 +3295,6 @@ void Searcher::load_state(SimpleInFile& f, const lbool status)
         }
     }
     f.get_vector(model);
-    f.get_vector(full_model);
     f.get_vector(conflict);
 
     //Clauses

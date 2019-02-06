@@ -97,10 +97,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package (Threads REQUIRED)
 
+# static compilation
+option(BUILD_SHARED_LIBS "Build the shared library" ON)
+option(STATICCOMPILE "Compile to static executable" OFF)
+if (STATICCOMPILE)
+    set(BUILD_SHARED_LIBS OFF)
+endif()
+
 option(EMSCRIPTEN "Generate only emscripten JS" OFF)
 if (EMSCRIPTEN)
     set(ONLY_SIMPLE ON)
-    set(STATICCOMPILE OFF)
+    set(BUILD_SHARED_LIBS ON)
     set(NOZLIB ON)
 endif()
 
@@ -128,6 +135,15 @@ macro(add_cxx_flag_if_supported flagname)
 
   if(HAVE_FLAG_${flagname})
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flagname}" )
+  endif()
+endmacro()
+
+include(CheckCCompilerFlag)
+macro(add_c_flag_if_supported flagname)
+  check_c_compiler_flag("${flagname}" HAVE_FLAG_${flagname})
+
+  if(HAVE_FLAG_${flagname})
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${flagname}" )
   endif()
 endmacro()
 
@@ -187,11 +203,9 @@ if (NOT MSVC)
     add_compile_options( -pthread )
 
     add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-O2>")
-    add_compile_options("$<$<CONFIG:RELWITHDEBINFO>:-mtune=native>")
 
     add_compile_options("$<$<CONFIG:RELEASE>:-O2>")
     add_compile_options("$<$<CONFIG:RELEASE>:-g0>")
-    add_compile_options("$<$<CONFIG:RELEASE>:-mtune=native>")
 
     add_compile_options("$<$<CONFIG:DEBUG>:-O0>")
 
@@ -211,15 +225,16 @@ else()
     add_compile_options("$<$<CONFIG:RELEASE>:/Ox>")
     add_compile_options("$<$<CONFIG:RELEASE>:/D>")
     add_compile_options("$<$<CONFIG:RELEASE>:/NDEBUG>")
-    add_compile_options("$<$<CONFIG:RELEASE>:/ZI>")
 
     add_compile_options("$<$<CONFIG:DEBUG>:/Od>")
 
-    if (STATICCOMPILE)
+    if (NOT BUILD_SHARED_LIBS)
         # We statically link to reduce dependencies
         foreach(flag_var CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
-            # /MD -- Causes the application to use the multithread-specific and DLL-specific version of the run-time library.
-            #        Defines _MT and _DLL and causes the compiler to place the library name MSVCRT.lib into the .obj file.
+            # /MD -- Causes the application to use the multithread-specific
+            #        and DLL-specific version of the run-time library.
+            #        Defines _MT and _DLL and causes the compiler to place
+            #        the library name MSVCRT.lib into the .obj file.
             if(${flag_var} MATCHES "/MD")
                 string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
             endif(${flag_var} MATCHES "/MD")
@@ -261,8 +276,8 @@ else()
     add_compile_options(/EHsc)
 
 
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /INCREMENTAL:NO")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /PDBCOMPRESS")
+    # set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /INCREMENTAL:NO")
+    # set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /PDBCOMPRESS")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:1572864")
 
     #what does this do?
@@ -271,14 +286,14 @@ endif()
 
 option(ENABLE_TESTING "Enable testing" OFF)
 option(COVERAGE "Build with coverage check" OFF)
-option(STATICCOMPILE "Compile to static executable" OFF)
-if (COVERAGE AND NOT STATICCOMPILE)
+
+if (COVERAGE AND BUILD_SHARED_LIBS)
     MESSAGE(FATAL_ERROR "Coverage can only be computed on static compilation")
 endif()
 
 if (NOT WIN32)
     if(NOT ENABLE_TESTING AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT COVERAGE)
-        #dd_cxx_flag_if_supported("-fvisibility=hidden")
+        #add_cxx_flag_if_supported("-fvisibility=hidden")
     endif()
     add_compile_options("-fPIC")
 
@@ -305,6 +320,9 @@ if (NOT WIN32)
         add_cxx_flag_if_supported("-Wparentheses")
         add_cxx_flag_if_supported("-Wunreachable-code")
         add_cxx_flag_if_supported("-ggdb3")
+
+        # Apparently needed before OS X Maverics (2013)
+        #add_c_flag_if_supported("-stdlib=libc++")
     endif()
 endif()
 
@@ -329,7 +347,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT SANITIZE)
 endif()
 
 if ((${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
-    if(STATICCOMPILE)
+    if(NOT BUILD_SHARED_LIBS)
         MESSAGE(STATUS "Compiling for static library use")
         if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -Wl,--whole-archive -ldl -lpthread -Wl,--no-whole-archive -static ")
@@ -353,7 +371,7 @@ if ((${CMAKE_SYSTEM_NAME} MATCHES "Linux") OR (${CMAKE_SYSTEM_NAME} MATCHES "Dar
     endif()
 endif()
 
-if ((${CMAKE_SYSTEM_NAME} MATCHES "Windows") AND (STATICCOMPILE))
+if ((${CMAKE_SYSTEM_NAME} MATCHES "Windows") AND (NOT BUILD_SHARED_LIBS))
     set(Boost_USE_STATIC_LIBS ON)
 endif()
 
@@ -386,7 +404,7 @@ if (GIT_EXECUTABLE)
 else()
   set(GIT_SHA "GIT-hash-notfound")
 endif()
-set(CMS_FULL_VERSION "5.6.3")
+set(CMS_FULL_VERSION "5.6.6")
 
 string(REPLACE "." ";" CMS_FULL_VERSION_LIST ${CMS_FULL_VERSION})
 SetVersionNumber("PROJECT" ${CMS_FULL_VERSION_LIST})
@@ -398,7 +416,7 @@ MESSAGE(STATUS "PROJECT_VERSION_PATCH: ${PROJECT_VERSION_PATCH}")
 option(ONLY_SIMPLE "Only build very simplistic executable -- no Boost needed" OFF)
 
 if (NOT ONLY_SIMPLE)
-    set (boost_components "")
+    set(boost_components "")
     set(boost_components ${boost_components} program_options)
     find_package( Boost 1.46 COMPONENTS ${boost_components})
 endif()
@@ -480,7 +498,7 @@ endif()
 option(NOZLIB "Don't use zlib" OFF)
 
 # cannot currently compile static zlib under Windows
-if (NOT NOZLIB AND NOT (STATICCOMPILE AND WIN32))
+if (NOT NOZLIB AND NOT ((NOT BUILD_SHARED_LIBS) AND WIN32))
     find_package(ZLIB)
     IF (ZLIB_FOUND)
         MESSAGE(STATUS "OK, Found ZLIB!")
@@ -507,6 +525,14 @@ endif()
 # -----------------------------------------------------------------------------
 option(REQUIRE_M4RI "Must use m4ri" OFF)
 option(NOM4RI "Don't use m4ri" OFF)
+option(MIT "Build with only MIT licensed components" OFF)
+if (MIT)
+    set(NOM4RI ON)
+    if(REQUIRE_M4RI)
+        message(FATAL_ERROR "Cannot have both MIT and REQUIRE_M4RI at the same time")
+    endif()
+endif()
+
 if (NOT NOM4RI)
     find_package(M4RI)
     IF (M4RI_FOUND)
@@ -553,13 +579,16 @@ endmacro()
 # -----------------------------------------------------------------------------
 option(ENABLE_PYTHON_INTERFACE "Enable Python interface" ON)
 option(FORCE_PYTHON2 OFF)
+message(STATUS "In case your Python interpreter is not found, or a wrong one is found, please set it with '-DPYTHON_EXECUTABLE:FILEPATH=your path here'")
 if (NOT FORCE_PYTHON2)
     find_package(PythonInterp 3)
     find_package(PythonLibs 3)
-    message(STATUS "Python 3 -- PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}")
-    message(STATUS "Python 3 -- PYTHON_LIBRARIES=${PYTHON_LIBRARIES}")
-    message(STATUS "Python 3 -- PYTHON_INCLUDE_DIRS=${PYTHON_INCLUDE_DIRS}")
-    message(STATUS "Python 3 -- PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
+    if (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND PYTHON_INCLUDE_DIRS)
+        message(STATUS "Python 3 -- PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}")
+        message(STATUS "Python 3 -- PYTHON_LIBRARIES=${PYTHON_LIBRARIES}")
+        message(STATUS "Python 3 -- PYTHON_INCLUDE_DIRS=${PYTHON_INCLUDE_DIRS}")
+        message(STATUS "Python 3 -- PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
+    endif()
 endif()
 
 if (NOT (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND PYTHON_INCLUDE_DIRS))
@@ -584,10 +613,34 @@ if (NOT (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND PYTHON_INCLUDE_DIRS))
     message(STATUS "Python 2.7 -- PYTHONLIBS_VERSION_STRING=${PYTHONLIBS_VERSION_STRING}")
 endif()
 
+
+# -----------------------------------------------------------------------------
+# Look for rust
+# disabled -- not sure how Rust bindings should be built....
+# maybe just use Cargo and don't build the interface from CMake?
+# -----------------------------------------------------------------------------
+# find_package(rustc)
+# find_package(rustdoc)
+# find_package(cargo)
+# if (RUSTC_EXECUTABLE AND CARGO_EXECUTABLE AND RUSTDOC_EXECUTABLE)
+#     #set(BUILD_RUST_INTERFACE)
+#     message(STATUS "RUST -- RUSTC_EXECUTABLE=${RUSTC_EXECUTABLE}")
+#     message(STATUS "RUST -- CARGO_EXECUTABLE=${CARGO_EXECUTABLE}")
+#     message(STATUS "RUST -- RUSTDOC_EXECUTABLE=${RUSTDOC_EXECUTABLE}")
+#
+#     include(Rust)
+#     add_subdirectory(rust rustinterf)
+# endif()
+
+
 #command-line parsing executable needs boost program-options
 if(NOT Boost_FOUND)
     set(ONLY_SIMPLE ON)
     message(STATUS "Only building executable with few command-line options because the boost program_options library were not available")
+else()
+    message(STATUS "Boost -- found at library: ${Boost_LIBRARIES}")
+    message(STATUS "Boost -- adding '${Boost_LIBRARY_DIRS}' to link directories")
+    link_directories(${Boost_LIBRARY_DIRS})
 endif()
 
 # -----------------------------------------------------------------------------

@@ -442,7 +442,7 @@ void Prober::update_and_print_stats(const double myTime, const uint64_t num_prop
 
     if (solver->conf.verbosity) {
         if (solver->conf.verbosity >= 3)
-            runStats.print(solver->nVars(), solver->conf.do_print_times);
+            runStats.print(solver->nVarsOuter(), solver->conf.do_print_times);
         else
             runStats.print_short(solver, time_out, time_remain);
     }
@@ -688,8 +688,8 @@ bool Prober::try_this(const Lit lit, const bool first)
     }
 
     solver->cancelUntil<false, true>(0);
-    solver->add_otf_subsume_long_clauses();
-    solver->add_otf_subsume_implicit_clause();
+    solver->add_otf_subsume_long_clauses<true>();
+    solver->add_otf_subsume_implicit_clause<true>();
     runStats.addedBin += solver->hyper_bin_res_all();
     std::pair<size_t, size_t> tmp = solver->remove_useless_bins();
     runStats.removedIrredBin += tmp.first;

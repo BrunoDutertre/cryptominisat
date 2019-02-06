@@ -640,7 +640,7 @@ void CompHandler::moveClausesImplicit(
     solver->binTri.redBins -= numRemovedHalfRed/2;
 }
 
-void CompHandler::addSavedState(vector<lbool>& solution)
+void CompHandler::addSavedState(vector<lbool>& solution, vector<Lit>& decisions)
 {
     //Enqueue them. They may need to be extended, so enqueue is needed
     //manipulating "model" may not be good enough
@@ -654,6 +654,7 @@ void CompHandler::addSavedState(vector<lbool>& solution)
             const lbool val = savedState[var];
             assert(solution[var] == l_Undef);
             solution[var] = val;
+            decisions.push_back(Lit(var, val == l_False));
             //cout << "Solution to var " << var + 1 << " has been added: " << val << endl;
 
             solver->varData[interVar].polarity = (val == l_True);
@@ -750,8 +751,12 @@ void CompHandler::readdRemovedClauses()
     removedClauses.sizes.clear();
 }
 
-void CompHandler::dump_removed_clauses(std::ostream* outfile) const
+uint32_t CompHandler::dump_removed_clauses(std::ostream* outfile) const
 {
+    if (outfile == NULL)
+        return removedClauses.sizes.size();
+
+    uint32_t num_cls = 0;
     vector<Lit> tmp;
     size_t at = 0;
     for (uint32_t size :removedClauses.sizes) {
@@ -761,8 +766,10 @@ void CompHandler::dump_removed_clauses(std::ostream* outfile) const
         }
         std::sort(tmp.begin(), tmp.end());
         *outfile << tmp << " 0" << endl;
+        num_cls ++;
 
         //Move 'at' along
         at += size;
     }
+    return num_cls;
 }

@@ -69,6 +69,7 @@ namespace CMSat {
         CMSatPrivateData& operator=(const CMSatPrivateData&) = delete;
 
         vector<Solver*> solvers;
+        vector<double> cpu_times;
         SharedData *shared_data = NULL;
         int which_solved = 0;
         std::atomic<bool>* must_interrupt;
@@ -80,6 +81,7 @@ namespace CMSat {
         std::ofstream* log = NULL;
         int sql = 0;
         double timeout = std::numeric_limits<double>::max();
+        bool interrupted = false;
 
         uint64_t previous_sum_conflicts = 0;
         uint64_t previous_sum_propagations = 0;
@@ -91,6 +93,7 @@ struct DataForThread
 {
     explicit DataForThread(CMSatPrivateData* data, const vector<Lit>* _assumptions = NULL) :
         solvers(data->solvers)
+        , cpu_times(data->cpu_times)
         , lits_to_add(&(data->cls_lits))
         , vars_to_add(data->vars_to_add)
         , assumptions(_assumptions)
@@ -106,6 +109,7 @@ struct DataForThread
         delete ret;
     }
     vector<Solver*>& solvers;
+    vector<double>& cpu_times;
     vector<Lit> *lits_to_add;
     uint32_t vars_to_add;
     const vector<Lit> *assumptions;
@@ -129,6 +133,7 @@ DLL_PUBLIC SATSolver::SATSolver(
     }
 
     data->solvers.push_back(new Solver((SolverConf*) config, data->must_interrupt));
+    data->cpu_times.push_back(0.0);
 }
 
 DLL_PUBLIC SATSolver::~SATSolver()
@@ -367,8 +372,9 @@ void update_config(SolverConf& conf, unsigned thread_num)
 DLL_PUBLIC void SATSolver::set_num_threads(unsigned num)
 {
     if (num <= 0) {
-        std::cerr << "ERROR: Number of threads must be at least 1" << endl;
-        throw std::runtime_error("ERROR: Number of threads must be at least 1");
+        const char err[] = "ERROR: Number of threads must be at least 1";
+        std::cerr << err << endl;
+        throw std::runtime_error(err);
     }
     if (num == 1) {
         return;
@@ -377,13 +383,15 @@ DLL_PUBLIC void SATSolver::set_num_threads(unsigned num)
     if (data->solvers[0]->drat->enabled() ||
         data->solvers[0]->conf.simulate_drat
     ) {
-        std::cerr << "ERROR: DRAT cannot be used in multi-threaded mode" << endl;
-        throw std::runtime_error("ERROR: DRAT cannot be used in multi-threaded mode");
+        const char err[] = "ERROR: DRAT cannot be used in multi-threaded mode";
+        std::cerr << err << endl;
+        throw std::runtime_error(err);
     }
 
     if (data->cls > 0 || nVars() > 0) {
-        std::cerr << "ERROR: You must first call set_num_threads() and only then add clauses and variables" << endl;
-        throw std::runtime_error("ERROR: You must first call set_num_threads() and only then add clauses and variables");
+        const char err[] = "ERROR: You must first call set_num_threads() and only then add clauses and variables";
+        std::cerr << err << endl;
+        throw std::runtime_error(err);
     }
 
     data->cls_lits.reserve(CACHE_SIZE);
@@ -391,6 +399,7 @@ DLL_PUBLIC void SATSolver::set_num_threads(unsigned num)
         SolverConf conf = data->solvers[0]->getConf();
         update_config(conf, i);
         data->solvers.push_back(new Solver(&conf, data->must_interrupt));
+        data->cpu_times.push_back(0.0);
     }
 
     //set shared data
@@ -489,6 +498,10 @@ DLL_PUBLIC void SATSolver::set_max_time(double max_time)
     Solver& s = *data->solvers[i];
     if (max_time >= 0) {
       s.conf.maxTime = s.get_stats().cpu_time + max_time;
+
+      //don't allow for overflow
+      if (s.conf.maxTime < max_time)
+          s.conf.maxTime = max_time;
     }
   }
 }
@@ -499,6 +512,10 @@ DLL_PUBLIC void SATSolver::set_max_confl(int64_t max_confl)
     Solver& s = *data->solvers[i];
     if (max_confl >= 0) {
       s.conf.max_confl = s.get_stats().conflStats.numConflicts + max_confl;
+
+      //don't allow for overflow
+      if (s.conf.max_confl < max_confl)
+          s.conf.max_confl = max_confl;
     }
   }
 }
@@ -712,13 +729,13 @@ struct OneThreadCalc
             ret = data_for_thread.solvers[tid]->simplify_with_assumptions(data_for_thread.assumptions);
         }
 
+        data_for_thread.cpu_times[tid] = cpuTime();
         if (print_thread_start_and_finish) {
-            double end_time = cpuTime();
             data_for_thread.update_mutex->lock();
             ios::fmtflags f(cout.flags());
             cout << "c Finished thread " << tid << " with result: " << ret
             << " T-diff: " << std::fixed << std::setprecision(2)
-            << (end_time-start_time)
+            << (data_for_thread.cpu_times[tid]-start_time)
             << endl;
             cout.flags(f);
             data_for_thread.update_mutex->unlock();
@@ -786,6 +803,7 @@ lbool calc(
             ret = data->solvers[0]->simplify_with_assumptions(assumptions);
         }
         data->okay = data->solvers[0]->okay();
+        data->cpu_times[0] = cpuTime();
         return ret;
     }
 
@@ -892,15 +910,52 @@ DLL_PUBLIC const char* SATSolver::get_compilation_env()
     return Solver::get_compilation_env();
 }
 
+std::string SATSolver::get_text_version_info()
+{
+    std::stringstream ss;
+    ss << "c CryptoMiniSat version " << get_version() << endl;
+    ss << "c CMS Copyright Mate Soos (soos.mate@gmail.com)" << endl;
+    ss << "c CMS SHA revision " << get_version_sha1() << endl;
+    #ifdef USE_M4RI
+    ss << "c CMS is GPL licensed due to M4RI being linked. Build without M4RI to get MIT version" << endl;
+    #else
+    ss << "c CMS is MIT licensed" << endl;
+    #endif
+
+    #ifdef USE_GAUSS
+    ss << "c Using code from 'When Boolean Satisfiability Meets Gauss-E. in a Simplex Way'" << endl;
+    ss << "c       by C.-S. Han and J.-H. Roland Jiang in CAV 2012. Fixes by M. Soos" << endl;
+    #endif
+    ss << "c CMS compilation env " << get_compilation_env() << endl;
+    #ifdef __GNUC__
+    ss << "c CMS compiled with gcc version " << __VERSION__ << endl;
+    #else
+    ss << "c CMS compiled with non-gcc compiler" << endl;
+    #endif
+
+    return ss.str();
+}
+
 DLL_PUBLIC void SATSolver::print_stats() const
 {
+    double cpu_time_total = cpuTimeTotal();
+
     double cpu_time;
-    if (data->solvers.size() > 1) {
-        cpu_time = cpuTimeTotal();
+    if (data->interrupted) {
+        //cannot know, we have in fact no idea how much time passed...
+        //we have to guess. Shitty guess comes here... :S
+        cpu_time = cpuTimeTotal()/(double)data->solvers.size();
     } else {
-        cpu_time = cpuTime();
+        cpu_time = data->cpu_times[data->which_solved];
     }
-    data->solvers[data->which_solved]->print_stats(cpu_time);
+
+    //If only one thread, then don't confuse the user. The difference
+    //is minimal.
+    if (data->solvers.size() == 1) {
+        cpu_time = cpu_time_total;
+    }
+
+    data->solvers[data->which_solved]->print_stats(cpu_time, cpu_time_total);
 }
 
 DLL_PUBLIC void SATSolver::set_drat(std::ostream* os, bool add_ID)
@@ -930,6 +985,7 @@ DLL_PUBLIC void SATSolver::interrupt_asap()
 void DLL_PUBLIC SATSolver::add_in_partial_solving_stats()
 {
     data->solvers[data->which_solved]->add_in_partial_solving_stats();
+    data->interrupted = true;
 }
 
 DLL_PUBLIC std::vector<Lit> SATSolver::get_zero_assigned_lits() const
@@ -1046,6 +1102,16 @@ DLL_PUBLIC uint64_t SATSolver::get_last_decisions()
     return get_sum_decisions() - data->previous_sum_decisions;
 }
 
+DLL_PUBLIC void SATSolver::dump_irred_clauses(std::ostream *out) const
+{
+    data->solvers[data->which_solved]->dump_irred_clauses(out);
+}
+
+void DLL_PUBLIC SATSolver::dump_red_clauses(std::ostream *out) const
+{
+    data->solvers[data->which_solved]->dump_red_clauses(out);
+}
+
 DLL_PUBLIC void SATSolver::open_file_and_dump_irred_clauses(std::string fname) const
 {
     data->solvers[data->which_solved]->open_file_and_dump_irred_clauses(fname);
@@ -1072,4 +1138,48 @@ void DLL_PUBLIC SATSolver::end_getting_small_clauses()
 {
     assert(data->solvers.size() >= 1);
     data->solvers[0]->end_getting_small_clauses();
+}
+
+void DLL_PUBLIC SATSolver::set_up_for_scalmc()
+{
+    for (size_t i = 0; i < data->solvers.size(); i++) {
+        SolverConf conf = data->solvers[i]->getConf();
+        conf.gaussconf.max_num_matrixes = 2;
+        conf.gaussconf.autodisable = false;
+        conf.global_multiplier_multiplier_max = 3;
+        conf.global_timeout_multiplier_multiplier = 1.5;
+        uint32_t xor_cut = 4;
+        assert(xor_cut >= 3);
+        conf.xor_var_per_cut = xor_cut-2;
+
+        conf.simplify_at_startup = 1;
+        conf.varElimRatioPerIter = 1;
+        conf.restartType = Restart::geom;
+        conf.polarity_mode = CMSat::PolarityMode::polarmode_neg;
+        conf.maple = 0;
+        conf.do_simplify_problem = true;
+        data->solvers[i]->setConf(conf);
+    }
+}
+
+DLL_PUBLIC const std::vector<Lit>& SATSolver::get_decisions_reaching_model() const
+{
+    if (!get_decision_reaching_valid()) {
+        cout << "ERROR: you called get_decisions_reaching_model() but it's not a valid decision set!" << endl;
+        exit(-1);
+    }
+    return data->solvers[data->which_solved]->get_decisions_reaching_model();
+}
+
+DLL_PUBLIC void SATSolver::set_need_decisions_reaching()
+{
+    for (size_t i = 0; i < data->solvers.size(); ++i) {
+        Solver& s = *data->solvers[i];
+        s.conf.need_decisions_reaching = true;
+    }
+}
+
+DLL_PUBLIC bool SATSolver::get_decision_reaching_valid() const
+{
+    return data->solvers[data->which_solved]->get_decision_reaching_valid();
 }

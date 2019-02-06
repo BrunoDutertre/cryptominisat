@@ -88,7 +88,8 @@ class Searcher : public HyperEngine
 
 
         vector<lbool>  model;
-        vector<lbool>  full_model;
+        vector<Lit>    decisions_reaching_model; // the decisions needed to reach current model
+        bool           decisions_reaching_model_valid = false;
         vector<Lit>   conflict;     ///<If problem is unsatisfiable (possibly under assumptions), this vector represent the final conflict clause expressed in the assumptions.
         template<bool update_bogoprops>
         PropBy propagate();
@@ -122,7 +123,7 @@ class Searcher : public HyperEngine
         bool check_order_heap_sanity() const;
 
         SQLStats* sqlStats = NULL;
-        void consolidate_watches();
+        void consolidate_watches(const bool full);
 
         //Gauss
         #ifdef USE_GAUSS
@@ -263,7 +264,9 @@ class Searcher : public HyperEngine
         void  attach_and_enqueue_learnt_clause(Clause* cl, bool enq = true);
         void  print_learning_debug_info() const;
         void  print_learnt_clause() const;
+        template<bool update_bogoprops>
         void  add_otf_subsume_long_clauses();
+        template<bool update_bogoprops>
         void  add_otf_subsume_implicit_clause();
         Clause* handle_last_confl_otf_subsumption(
             Clause* cl

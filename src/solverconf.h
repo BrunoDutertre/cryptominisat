@@ -181,8 +181,6 @@ class DLL_PUBLIC SolverConf
         double   adjust_glue_if_too_many_low;
         uint64_t min_num_confl_adjust_glue_cutoff;
 
-        int      guess_cl_effectiveness;
-
         //maple
         int      maple;
         unsigned modulo_maple_iter;
@@ -216,7 +214,7 @@ class DLL_PUBLIC SolverConf
         unsigned max_num_lits_more_more_red_min;
 
         //Verbosity
-        int  verbosity;  ///<Verbosity level. 0=silent, 1=some progress report, 2=lots of report, 3 = all report       (default 2) preferentiality is turned off (i.e. picked randomly between [0, all])
+        int  verbosity;  ///<Verbosity level. 0=silent, 1=some progress report, 2=lots of report, 3 = all report       (default 2)
         int  doPrintGateDot; ///< Print DOT file of gates
         int  print_full_restart_stat;
         int  print_all_restarts;
@@ -235,6 +233,11 @@ class DLL_PUBLIC SolverConf
         int       otfHyperbin;
         int       doOTFSubsume;
         int       doOTFSubsumeOnlyAtOrBelowGlue;
+
+        //decision-based conflict clause generation
+        int       do_decision_based_cl;
+        uint32_t  decision_based_cl_max_levels;
+        uint32_t  decision_based_cl_min_learned_size;
 
         //SQL
         bool      dump_individual_restarts_and_clauses;
@@ -255,6 +258,7 @@ class DLL_PUBLIC SolverConf
         double    varElimRatioPerIter;
         int      skip_some_bve_resolvents;
         int velim_resolvent_too_large; //-1 == no limit
+        int var_linkin_limit_MB;
 
         //Subs, str limits for simplifier
         long long subsumption_time_limitM;
@@ -288,8 +292,8 @@ class DLL_PUBLIC SolverConf
         //XORs
         int      doFindXors;
         unsigned maxXorToFind;
+        unsigned maxXorToFindSlow;
         int      useCacheWhenFindingXors;
-        int      doEchelonizeXOR;
         uint64_t maxXORMatrix;
         uint64_t xor_finder_time_limitM;
         int      allow_elim_xor_vars;
@@ -331,6 +335,7 @@ class DLL_PUBLIC SolverConf
         //Memory savings
         int       doRenumberVars;
         int       doSaveMem;
+        uint64_t  full_watch_consolidate_every_n_confl;
 
         //Component handling
         int       doCompHandler;
@@ -376,6 +381,7 @@ class DLL_PUBLIC SolverConf
         unsigned reconfigure_at;
         unsigned preprocess;
         int      simulate_drat;
+        int      need_decisions_reaching;
         std::string simplified_cnf;
         std::string solution_file;
         std::string saved_state_file;

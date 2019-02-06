@@ -224,7 +224,7 @@ public:
     size_t mem_used_xor() const;
     size_t mem_used_bva() const;
     void print_gatefinder_stats() const;
-    void dump_blocked_clauses(std::ostream* outfile) const;
+    uint32_t dump_blocked_clauses(std::ostream* outfile) const;
 
     //UnElimination
     void print_blocked_clauses_reverse() const;
@@ -311,6 +311,7 @@ private:
     int64_t  empty_varelim_time_limit;
     int64_t  varelim_num_limit;
     int64_t  varelim_sub_str_limit;
+    int64_t  varelim_linkin_limit_bytes;
     int64_t* limit_to_decrease;
 
     //Start-up

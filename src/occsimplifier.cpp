@@ -179,8 +179,9 @@ void OccSimplifier::print_blocked_clauses_reverse() const
     }
 }
 
-void OccSimplifier::dump_blocked_clauses(std::ostream* outfile) const
+uint32_t OccSimplifier::dump_blocked_clauses(std::ostream* outfile) const
 {
+    uint32_t num_cls = 0;
     for (BlockedClauses blocked: blockedClauses) {
         if (blocked.toRemove)
             continue;
@@ -191,16 +192,22 @@ void OccSimplifier::dump_blocked_clauses(std::ostream* outfile) const
                 continue;
             }
             Lit l = blocked.at(i, blkcls);
+            if (outfile != NULL) {
+                if (l == lit_Undef) {
+                    *outfile
+                    << " 0"
+                    << endl;
+                } else {
+                    *outfile
+                    << l << " ";
+                }
+            }
             if (l == lit_Undef) {
-                *outfile
-                << " 0"
-                << endl;
-            } else {
-                *outfile
-                << l << " ";
+                num_cls++;
             }
         }
     }
+    return num_cls;
 }
 
 void OccSimplifier::extend_model(SolutionExtender* extender)
@@ -229,6 +236,7 @@ void OccSimplifier::extend_model(SolutionExtender* extender)
         Lit blockedOn = solver->varReplacer->get_lit_replaced_with_outer(it->at(0, blkcls));
         size_t at = 1;
         bool satisfied = false;
+        lits.clear();
         while(at < it->size()) {
             if (it->at(at, blkcls) == lit_Undef) {
                 if (!satisfied) {
@@ -237,8 +245,9 @@ void OccSimplifier::extend_model(SolutionExtender* extender)
                     #ifndef DEBUG_VARELIM
                     //all should be satisfied in fact
                     //no need to go any further
-                    if (var_set)
+                    if (var_set) {
                         break;
+                    }
                     #endif
                 }
                 satisfied = false;
@@ -246,12 +255,12 @@ void OccSimplifier::extend_model(SolutionExtender* extender)
             } else if (!satisfied) {
                 Lit l = it->at(at, blkcls);
                 l = solver->varReplacer->get_lit_replaced_with_outer(l);
+                lits.push_back(l);
 
                 //Blocked clause can be skipped, it's satisfied
                 if (solver->model_value(l) == l_True) {
                     satisfied = true;
                 }
-                lits.push_back(l);
             }
             at++;
         }
@@ -1006,6 +1015,7 @@ bool OccSimplifier::eliminate_vars()
     last_trail = solver->trail_size();
 
     while(varelim_num_limit > 0
+        && varelim_linkin_limit_bytes > 0
         && *limit_to_decrease > 0
         && grow < (uint32_t)solver->conf.min_bva_gain
         //&& grow < 1 //solver->conf.min_bva_gain
@@ -1033,6 +1043,7 @@ bool OccSimplifier::eliminate_vars()
             while(!velim_order.empty()
                 && *limit_to_decrease > 0
                 && varelim_num_limit > 0
+                && varelim_linkin_limit_bytes > 0
                 && !solver->must_interrupt_asap()
             ) {
                 assert(limit_to_decrease == &norm_varelim_time_limit);
@@ -1145,6 +1156,17 @@ bool OccSimplifier::eliminate_vars()
             cout << "c Reduced to " << solver->get_num_free_vars() << " vars"
             << ", " << sum_irred_cls_longs() + solver->binTri.irredBins
             << " cls (grow=" << grow << ")" << endl;
+
+            if (varelim_num_limit < 0
+                || varelim_linkin_limit_bytes < 0
+                || *limit_to_decrease < 0
+            ) {
+                cout << "c [occ-bve] stopped varelim due to outage. "
+                << " varelim_num_limit: "; print_value_kilo_mega(varelim_num_limit);
+                cout << " varelim_linkin_limit_bytes: "; print_value_kilo_mega(varelim_linkin_limit_bytes);
+                cout << " *limit_to_decrease: "; print_value_kilo_mega(*limit_to_decrease);
+                cout << endl;
+            }
         }
 
 
@@ -1186,7 +1208,7 @@ end:
     }
     if (solver->conf.verbosity) {
         if (solver->conf.verbosity >= 3)
-            runStats.print(solver->nVars());
+            runStats.print(solver->nVarsOuter());
         else
             runStats.print_short();
     }
@@ -1842,6 +1864,7 @@ void OccSimplifier::set_limits()
     varelim_sub_str_limit *= 10;
 
     varelim_num_limit = ((double)solver->get_num_free_vars() * solver->conf.varElimRatioPerIter);
+    varelim_linkin_limit_bytes = solver->conf.var_linkin_limit_MB *1000LL*1000LL*solver->conf.var_and_mem_out_mult;
 
     if (!solver->conf.do_strengthen_with_occur) {
         strengthening_time_limit = 0;
@@ -2323,13 +2346,19 @@ bool OccSimplifier::add_varelim_resolvent(
         ClOffset offset = solver->cl_alloc.get_offset(newCl);
         clauses.push_back(offset);
         added_long_cl.push_back(offset);
+
+        // 4 = clause itself
+        // 8 = watch space
+        varelim_linkin_limit_bytes -= finalLits.size()*(4+8);
+        varelim_linkin_limit_bytes -= sizeof(Clause);
+
     } else if (finalLits.size() == 2) {
         added_bin_cl.push_back(std::make_pair(finalLits[0], finalLits[1]));
         n_occurs[finalLits[0].toInt()]++;
         n_occurs[finalLits[1].toInt()]++;
-        if (!solver->ok) {
-            return false;
-        }
+
+        // 8 = watch space
+        varelim_linkin_limit_bytes -= finalLits.size()*(8);
     }
 
     //Touch every var of the new clause, so we re-estimate

@@ -31,6 +31,7 @@ THE SOFTWARE.
 #include <vector>
 #include <iostream>
 #include <utility>
+#include <string>
 #include "cryptominisat5/solvertypesmini.h"
 
 namespace CMSat {
@@ -66,6 +67,7 @@ namespace CMSat {
         const std::vector<lbool>& get_model() const; //get model that satisfies the problem. Only makes sense if previous solve()/simplify() call was l_True
         const std::vector<Lit>& get_conflict() const; //get conflict in terms of the assumptions given in case the previous call to solve() was l_False
         bool okay() const; //the problem is still solveable, i.e. the empty clause hasn't been derived
+        const std::vector<Lit>& get_decisions_reaching_model() const; //get decisions that lead to model. may NOT work, in case the decisions needed were internal, extended variables. exit(-1)'s in case of such a case. you MUST check decisions_reaching_computed().
 
         ////////////////////////////
         // Debug all calls for later replay with --debuglit FILENAME
@@ -101,6 +103,9 @@ namespace CMSat {
         void set_greedy_undef(); //Try to set variables to l_Undef in solution
         void set_independent_vars(std::vector<uint32_t>* ind_vars);
         void set_timeout_all_calls(double secs); //max timeout on all subsequent solve() or simplify
+        void set_up_for_scalmc(); //used to set the solver up for ScalMC configuration
+        void set_need_decisions_reaching(); //set it before calling solve()
+        bool get_decision_reaching_valid() const; //the get_decisions_reaching_model will work -- it may NOT be
 
 
         ////////////////////////////
@@ -109,6 +114,7 @@ namespace CMSat {
         static const char* get_version(); //get solver version in string format
         static const char* get_version_sha1(); //get SHA1 version string of the solver
         static const char* get_compilation_env(); //get compilation environment string
+        std::string get_text_version_info();  //get printable version and copyright text
 
 
         ////////////////////////////
@@ -131,6 +137,8 @@ namespace CMSat {
         void print_stats() const; //print solving stats. Call after solve()/simplify()
         void set_drat(std::ostream* os, bool set_ID); //set drat to ostream, e.g. stdout or a file
         void interrupt_asap(); //call this asynchronously, and the solver will try to cleanly abort asap
+        void dump_irred_clauses(std::ostream *out) const; //dump irredundant clauses to this stream when solving finishes
+        void dump_red_clauses(std::ostream *out) const; //dump redundant ("learnt") clauses to this stream when solving finishes
         void open_file_and_dump_irred_clauses(std::string fname) const; //dump irredundant clauses to this file when solving finishes
         void open_file_and_dump_red_clauses(std::string fname) const; //dump redundant ("learnt") clauses to this file when solving finishes
         void add_in_partial_solving_stats(); //used only by Ctrl+C handler. Ignore.
