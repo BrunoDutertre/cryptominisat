@@ -82,13 +82,12 @@ bool SCCFinder::performSCC(uint64_t* bogoprops_given)
             runStats.print_short(solver);
     }
     globalStats += runStats;
-    solver->binTri.numNewBinsSinceSCC = 0;
 
     if (bogoprops_given) {
         *bogoprops_given += runStats.bogoprops;
     }
 
-    return solver->ok;
+    return solver->okay();
 }
 
 void SCCFinder::tarjan(const uint32_t vertex)
@@ -196,22 +195,22 @@ void SCCFinder::add_bin_xor_in_tmp()
     }
 }
 
-void SCCFinder::Stats::print_short(Solver* solver) const
+void SCCFinder::Stats::print_short(Solver* s) const
 {
     cout
     << "c [scc]"
     << " new: " << foundXorsNew
     << " BP " << bogoprops/(1000*1000) << "M";
-    if (solver) {
-        cout << solver->conf.print_times(cpu_time);
+    if (s) {
+        cout << s->conf.print_times(cpu_time);
     } else {
         cout << "  T: " << std::setprecision(2) << std::fixed << cpu_time;
     }
     cout << endl;
 
-    if (solver && solver->sqlStats) {
-        solver->sqlStats->time_passed_min(
-            solver
+    if (s && s->sqlStats) {
+        s->sqlStats->time_passed_min(
+            s
             , "scc"
             , cpu_time
         );

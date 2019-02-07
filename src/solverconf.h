@@ -65,7 +65,6 @@ enum class Restart {
     , geom
     , glue_geom
     , luby
-    , backtrack
     , never
 };
 
@@ -83,9 +82,6 @@ inline std::string getNameOfRestartType(Restart rest_type)
 
         case Restart::luby:
             return "luby";
-
-        case Restart::backtrack:
-            return "backtrack";
 
         case Restart::never:
             return "never";
@@ -109,6 +105,31 @@ inline std::string getNameOfCleanType(ClauseClean clauseCleaningType)
             std::exit(-1);
     };
 }
+
+class GaussConf
+{
+    public:
+
+    GaussConf() :
+        decision_until(700)
+        , autodisable(true)
+        , max_matrix_rows(5000)
+        , min_matrix_rows(2)
+        , max_num_matrixes(5)
+    {
+    }
+
+    uint32_t decision_until; //do Gauss until this level
+    bool autodisable;
+    uint32_t max_matrix_rows; //The maximum matrix size -- no. of rows
+    uint32_t min_matrix_rows; //The minimum matrix size -- no. of rows
+    uint32_t max_num_matrixes; //Maximum number of matrixes
+
+    //Matrix extraction config
+    bool doMatrixFind = true;
+    uint32_t min_gauss_xor_clauses = 2;
+    uint32_t max_gauss_xor_clauses = 500000;
+};
 
 class DLL_PUBLIC SolverConf
 {
@@ -160,24 +181,21 @@ class DLL_PUBLIC SolverConf
         double   adjust_glue_if_too_many_low;
         uint64_t min_num_confl_adjust_glue_cutoff;
 
-        int      guess_cl_effectiveness;
+        //maple
+        int      maple;
+        unsigned modulo_maple_iter;
+        bool     more_maple_bump_high_glue;
 
         //For restarting
         unsigned    restart_first;      ///<The initial restart limit.                                                                (default 100)
         double    restart_inc;        ///<The factor with which the restart limit is multiplied in each restart.                    (default 1.5)
-        unsigned   burst_search_len;
         Restart  restartType;   ///<If set, the solver will always choose the given restart strategy
         int       do_blocking_restart;
         unsigned blocking_restart_trail_hist_length;
         double   blocking_restart_multip;
         int      broken_glue_restart;
-        int      maple;
-        int      maple_backtrack;
-        unsigned maple_backtrack_mod;
-        unsigned modulo_maple_iter;
 
         double   local_glue_multiplier;
-        double   local_backtrack_multiplier;
         unsigned  shortTermHistorySize; ///< Rolling avg. glue window size
         unsigned lower_bound_for_blocking_restart;
         double   ratio_glue_geom; //higher the number, the more glue will be done. 2 is 2x glue 1x geom
@@ -196,9 +214,8 @@ class DLL_PUBLIC SolverConf
         unsigned max_num_lits_more_more_red_min;
 
         //Verbosity
-        int  verbosity;  ///<Verbosity level. 0=silent, 1=some progress report, 2=lots of report, 3 = all report       (default 2) preferentiality is turned off (i.e. picked randomly between [0, all])
+        int  verbosity;  ///<Verbosity level. 0=silent, 1=some progress report, 2=lots of report, 3 = all report       (default 2)
         int  doPrintGateDot; ///< Print DOT file of gates
-        int  doPrintConflDot; ///< Print DOT file for each conflict
         int  print_full_restart_stat;
         int  print_all_restarts;
         int  verbStats;
@@ -216,10 +233,13 @@ class DLL_PUBLIC SolverConf
         int       otfHyperbin;
         int       doOTFSubsume;
         int       doOTFSubsumeOnlyAtOrBelowGlue;
-        int       rewardShortenedClauseWithConfl; //Shortened through OTF subsumption
+
+        //decision-based conflict clause generation
+        int       do_decision_based_cl;
+        uint32_t  decision_based_cl_max_levels;
+        uint32_t  decision_based_cl_min_learned_size;
 
         //SQL
-        bool      dump_individual_search_time;
         bool      dump_individual_restarts_and_clauses;
         double    dump_individual_cldata_ratio;
 
@@ -238,6 +258,7 @@ class DLL_PUBLIC SolverConf
         double    varElimRatioPerIter;
         int      skip_some_bve_resolvents;
         int velim_resolvent_too_large; //-1 == no limit
+        int var_linkin_limit_MB;
 
         //Subs, str limits for simplifier
         long long subsumption_time_limitM;
@@ -271,15 +292,16 @@ class DLL_PUBLIC SolverConf
         //XORs
         int      doFindXors;
         unsigned maxXorToFind;
+        unsigned maxXorToFindSlow;
         int      useCacheWhenFindingXors;
-        int      doEchelonizeXOR;
-        unsigned long long  maxXORMatrix;
-        long long xor_finder_time_limitM;
+        uint64_t maxXORMatrix;
+        uint64_t xor_finder_time_limitM;
+        int      allow_elim_xor_vars;
+        unsigned xor_var_per_cut;
 
         //Var-replacement
         int doFindAndReplaceEqLits;
         int doExtendedSCC;
-        double sccFindPercent;
         int max_scc_depth;
 
         //Iterative Alo Scheduling
@@ -313,6 +335,7 @@ class DLL_PUBLIC SolverConf
         //Memory savings
         int       doRenumberVars;
         int       doSaveMem;
+        uint64_t  full_watch_consolidate_every_n_confl;
 
         //Component handling
         int       doCompHandler;
@@ -338,6 +361,7 @@ class DLL_PUBLIC SolverConf
 
         //Gauss
         GaussConf gaussconf;
+        bool dont_elim_xor_vars;
 
         //Greedy undef
         int      greedy_undef;
@@ -357,6 +381,7 @@ class DLL_PUBLIC SolverConf
         unsigned reconfigure_at;
         unsigned preprocess;
         int      simulate_drat;
+        int      need_decisions_reaching;
         std::string simplified_cnf;
         std::string solution_file;
         std::string saved_state_file;

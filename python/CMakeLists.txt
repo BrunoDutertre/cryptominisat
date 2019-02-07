@@ -32,15 +32,27 @@ print(sysconfig.get_config_var('SHLIBS'), end = '')"
     OUTPUT_VARIABLE PY_LD_CONFIG)
 
 
+execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "
+from __future__ import print_function;
+import sysconfig;
+print(sysconfig.get_config_var('LINKFORSHARED'), end = '')"
+    OUTPUT_VARIABLE PY_LINKFORSHARED_CONFIG)
+
+
 string(REPLACE "\n" " " PY_C_CONFIG ${PY_C_CONFIG})
 string(REPLACE "\n" " " PY_LD_CONFIG ${PY_LD_CONFIG})
+string(REPLACE "\n" " " PY_LINKFORSHARED_CONFIG ${PY_LINKFORSHARED_CONFIG})
 
 message(STATUS "Python CFLAGS:  '${PY_C_CONFIG}'")
 message(STATUS "Python LDFLAGS: '${PY_LD_CONFIG}'")
+message(STATUS "Python LINKFORSHARED flags: '${PY_LINKFORSHARED_CONFIG}'")
+message(STATUS "Python module will be installed to : '${CMAKE_INSTALL_PREFIX}'")
+
+set(PY_LD_CONFIG "${PY_LD_CONFIG} ${PY_LINKFORSHARED_CONFIG}")
 
 
-set(SETUP_PY    "${CMAKE_CURRENT_BINARY_DIR}/setup.py")
-set(OUTPUT      "${CMAKE_CURRENT_BINARY_DIR}/build")
+set(SETUP_PY       "${CMAKE_CURRENT_BINARY_DIR}/setup.py")
+set(OUTPUT         "${CMAKE_CURRENT_BINARY_DIR}/build")
 
 # Copy environment for distutils
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/README.rst" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/")
@@ -49,34 +61,41 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/tests" DESTINATION "${CMAKE_CURRENT_BINAR
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/MANIFEST.in" "${CMAKE_CURRENT_BINARY_DIR}/MANIFEST.in")
 
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/setup.py.in" ${SETUP_PY})
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/setup.py.in" "${SETUP_PY}")
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/pycryptosat.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/src/pycryptosat.cpp")
 
-add_custom_target(mypylib
-    COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} build
-)
-
-add_dependencies(mypylib
-    libcryptominisat5
-)
-
-add_custom_command(OUTPUT ${OUTPUT}/timestamp
-                   COMMAND ${PYTHON_EXECUTABLE}
-                   ARGS setup.py build_ext --inplace --rpath ../lib
-                   DEPENDS libcryptominisat5)
+if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+    add_custom_command(OUTPUT ${OUTPUT}/timestamp
+       COMMAND ${PYTHON_EXECUTABLE}
+       ARGS setup.py build_ext --inplace
+       DEPENDS libcryptominisat5
+   )
+else()
+    add_custom_command(OUTPUT ${OUTPUT}/timestamp
+       COMMAND ${PYTHON_EXECUTABLE}
+       ARGS setup.py build_ext --inplace --rpath ../lib
+       DEPENDS libcryptominisat5
+   )
+endif()
 
 add_custom_target(python_interface
                   ALL DEPENDS ${OUTPUT}/timestamp)
 
-# Make a distribution source package
-# not really working -- only adds the .py files, and the test
-add_custom_target(python_interface_dist_package
-                  COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} sdist
-                  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-
 install(CODE "execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} install --record files.txt
+    COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} install --root=\$ENV{DESTDIR}/ --prefix=${CMAKE_INSTALL_PREFIX} --record files.txt
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})"
 )
+
+#todo uninstall
+if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+    add_custom_target(uninstall_pycyrptosat
+        COMMAND Get-Content files.txt | ForEach-Object {Remove-Item $_ -Recurse -Force}
+    )
+else()
+    add_custom_target(uninstall_pycyrptosat
+        COMMAND cat files.txt | xargs rm -f
+    )
+endif()
 
 if (ENABLE_TESTING AND NOT APPLE)
     add_test(NAME python_interface_test

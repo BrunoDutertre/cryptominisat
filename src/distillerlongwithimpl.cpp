@@ -88,7 +88,7 @@ end:
     }
     runStats.clear();
 
-    return solver->ok;
+    return solver->okay();
 }
 
 void DistillerLongWithImpl::strengthen_clause_with_watch(
@@ -441,7 +441,7 @@ bool DistillerLongWithImpl::shorten_all_cl_with_cache_watch_stamp(
 
         #ifdef USE_GAUSS
         cl = solver->cl_alloc.ptr(offset);
-        if (cl->_used_in_xor) {
+        if (cl->used_in_xor()) {
             goto copy;
         }
         #endif
@@ -466,7 +466,7 @@ bool DistillerLongWithImpl::shorten_all_cl_with_cache_watch_stamp(
         , orig_time_available
     );
 
-    return solver->ok;
+    return solver->okay();
 }
 
 void DistillerLongWithImpl::dump_stats_for_shorten_all_cl_with_cache_stamp(
@@ -487,7 +487,7 @@ void DistillerLongWithImpl::dump_stats_for_shorten_all_cl_with_cache_stamp(
     } else {
         runStats.irredCacheBased += tmpStats;
     }
-    if (solver->conf.verbosity) {
+    if (solver->conf.verbosity >= 2) {
         if (solver->conf.verbosity >= 10) {
             cout << "red:" << red << " alsostrenghten:" << alsoStrengthen << endl;
         }

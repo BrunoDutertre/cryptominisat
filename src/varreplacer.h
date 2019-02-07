@@ -53,7 +53,7 @@ class VarReplacer
         void new_var(const uint32_t orig_outer);
         void new_vars(const size_t n);
         void save_on_var_memory();
-        bool replace_if_enough_is_found(const size_t limit = 0, uint64_t* bogoprops = NULL);
+        bool replace_if_enough_is_found(const size_t limit = 0, uint64_t* bogoprops = NULL, bool* replaced = NULL);
         uint32_t print_equivalent_literals(bool outer_numbering, std::ostream *os = NULL) const;
         void print_some_stats(const double global_cpu_time) const;
         const SCCFinder* get_scc_finder() const;
@@ -123,6 +123,7 @@ class VarReplacer
         uint32_t get_var_replaced_with_fast(const uint32_t var) const {
             return fast_inter_replace_lookup[var].var();
         }
+        bool replace_xor_clauses();
 
         vector<Lit> ps_tmp;
         bool perform_replace();

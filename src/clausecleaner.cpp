@@ -191,7 +191,11 @@ inline bool ClauseCleaner::clean_clause(Clause& cl)
     }
     if (i != j) {
         cl.shrink(i-j);
-        (*solver->drat) << add << cl << fin << findelay;
+        (*solver->drat) << add << cl
+        #ifdef STATS_NEEDED
+        << solver->sumConflicts
+        #endif
+        << fin << findelay;
     } else {
         solver->drat->forget_delay();
     }
@@ -233,18 +237,18 @@ bool ClauseCleaner::satisfied(const Clause& cl) const
     return false;
 }
 
-void ClauseCleaner::ImplicitData::update_solver_stats(Solver* solver)
+void ClauseCleaner::ImplicitData::update_solver_stats(Solver* s)
 {
     for(const BinaryClause& bincl: toAttach) {
-        assert(solver->value(bincl.getLit1()) == l_Undef);
-        assert(solver->value(bincl.getLit2()) == l_Undef);
-        solver->attach_bin_clause(bincl.getLit1(), bincl.getLit2(), bincl.isRed());
+        assert(s->value(bincl.getLit1()) == l_Undef);
+        assert(s->value(bincl.getLit2()) == l_Undef);
+        s->attach_bin_clause(bincl.getLit1(), bincl.getLit2(), bincl.isRed());
     }
 
     assert(remNonLBin % 2 == 0);
     assert(remLBin % 2 == 0);
-    solver->binTri.irredBins -= remNonLBin/2;
-    solver->binTri.redBins -= remLBin/2;
+    s->binTri.irredBins -= remNonLBin/2;
+    s->binTri.redBins -= remLBin/2;
 }
 
 void ClauseCleaner::clean_clauses_pre()
@@ -265,6 +269,8 @@ void ClauseCleaner::clean_clauses_post()
 void ClauseCleaner::remove_and_clean_all()
 {
     double myTime = cpuTime();
+    assert(solver->okay());
+    assert(solver->prop_at_head());
 
     clean_implicit_clauses();
 
@@ -287,6 +293,12 @@ void ClauseCleaner::remove_and_clean_all()
     ) {
         const Lit lit = Lit::toLit(wsLit);
         if (solver->value(lit) != l_Undef) {
+            if (!it->empty()) {
+                cout << "ERROR watches size: " << it->size() << endl;
+                for(const auto& w: *it) {
+                    cout << "ERROR w: " << w << endl;
+                }
+            }
             assert(it->empty());
         }
     }
@@ -347,25 +359,29 @@ bool ClauseCleaner::clean_xor_clauses(vector<Xor>& xors)
     }
     #endif
 
-    size_t i = 0;
-    size_t j = 0;
-    for(size_t size = xors.size(); i < size; i++) {
-        Xor& x = xors[i];
-        const bool keep = clean_one_xor(x);
-        if (!solver->ok) {
-            return false;
-        }
+    size_t last_trail = std::numeric_limits<size_t>::max();
+    while(last_trail != solver->trail_size()) {
+        last_trail = solver->trail_size();
+        size_t i = 0;
+        size_t j = 0;
+        for(size_t size = xors.size(); i < size; i++) {
+            Xor& x = xors[i];
+            const bool keep = clean_one_xor(x);
+            if (!solver->ok) {
+                return false;
+            }
 
-        if (keep) {
-            xors[j++] = x;
+            if (keep) {
+                xors[j++] = x;
+            }
         }
-    }
-    xors.resize(j);
+        xors.resize(j);
 
-    #ifdef VERBOSE_DEBUG
-    for(Xor& x : xors) {
-        cout << "cleaned XOR: " << x << endl;
+        #ifdef VERBOSE_DEBUG
+        for(Xor& x : xors) {
+            cout << "cleaned XOR: " << x << endl;
+        }
+        #endif
     }
-    #endif
-    return solver->ok;
+    return solver->okay();
 }

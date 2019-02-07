@@ -19,24 +19,19 @@
 # THE SOFTWARE.
 
 
-find_program(LIT_TOOL
-    lit
-    DOC "Path to lit tool"
+set (LIT_TOOL "${PYTHON_EXECUTABLE} -m lit.main")
+execute_process(
+    COMMAND "${PYTHON_EXECUTABLE}" "-m" "lit.main" "--version"
+    OUTPUT_VARIABLE LIT_VER_OUT
+    ERROR_VARIABLE  LIT_VER_ERR
+    RESULT_VARIABLE RES
 )
 
-if(NOT LIT_TOOL)
-    message(FATAL_ERROR "Could not find 'lit' tool. You need to install it by e.g. 'pip install lit' If it's already installed, set LIT_TOOL to the full path for lit")
-endif()
-
-# Checking absolute path because if(EXISTS ...) behaviour only well
-# defined if path is absolute
-IF(NOT IS_ABSOLUTE "${LIT_TOOL}")
-    message(FATAL_ERROR "LIT_TOOL must be set to an absolute PATH")
-endif()
-
-if(NOT EXISTS "${LIT_TOOL}")
-    # Can happen if users environment changes after initial configure
-    message(FATAL_ERROR "LIT_TOOL is set but the path does not seem to exist. Try deleting the LIT_TOOL cache variable and reconfiguring")
+if(NOT("${RES}" STREQUAL "0"))
+    message(STATUS "Output of LIT stdout: '${LIT_VER_OUT}'")
+    message(STATUS "Output of LIT stderr: '${LIT_VER_ERR}'")
+    message(STATUS "LIT result val is: '${RES}'")
+    message(FATAL_ERROR "Could not find 'lit' tool. You need to install it by e.g. 'pip install lit' or 'python -m pip install lit'. If it's already installed, set LIT_TOOL to the full path for lit")
 endif()
 
 set(LIT_ARGS -v CACHE STRING "Arguments to pass to lit")
@@ -59,6 +54,7 @@ add_subdirectory(${GTEST_PREFIX} gtest)
 set(GTEST_BOTH_LIBRARIES gtest gtest_main)
 
 include_directories(${GTEST_PREFIX}/include)
+add_definitions( -DCMS_TESTING_ENABLED )
 
 # Add handy macros/functions
 include(AddSTPGTest)
@@ -134,19 +130,20 @@ add_test (
 )
 
 
-# IPASIR test
-add_executable(ipasir_test
-    ipasir_test.cpp
-)
-target_link_libraries(ipasir_test
-    ${GTEST_BOTH_LIBRARIES}
-    ipasircryptominisat5
-)
-add_test (
-    NAME ipasir_test
-    COMMAND ipasir_test
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
+if (IPASIR)
+    add_executable(ipasir_test
+        ipasir_test.cpp
+    )
+    target_link_libraries(ipasir_test
+        ${GTEST_BOTH_LIBRARIES}
+        ipasircryptominisat5
+    )
+    add_test (
+        NAME ipasir_test
+        COMMAND ipasir_test
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
 
 #google test harness
 set (MY_TESTS
@@ -168,12 +165,14 @@ set (MY_TESTS
     xorfinder_test
     comphandler_test
     dump_test
+    searcher_test
+    solver_test
 #    undefine_test
 )
 
 if (USE_GAUSS)
     set (MY_TESTS ${MY_TESTS}
-        gauss_test
+        # gauss_test
         matrixfinder_test
     )
 endif()
@@ -183,8 +182,8 @@ foreach(F ${MY_TESTS})
         ${F}.cpp
     )
     target_link_libraries(${F}
-        ${GTEST_BOTH_LIBRARIES}
         libcryptominisat5
+        ${GTEST_BOTH_LIBRARIES}
     )
     add_test (
         NAME ${F}

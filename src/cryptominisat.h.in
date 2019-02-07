@@ -31,12 +31,11 @@ THE SOFTWARE.
 #include <vector>
 #include <iostream>
 #include <utility>
+#include <string>
 #include "cryptominisat5/solvertypesmini.h"
 
 namespace CMSat {
     struct CMSatPrivateData;
-    class TooManyVarsError {};
-    class TooLongClauseError {};
     #ifdef _WIN32
     class __declspec(dllexport) SATSolver
     #else
@@ -63,11 +62,12 @@ namespace CMSat {
         // Solving and simplifying
         ////////////////////////////
 
-        lbool solve(const std::vector<Lit>* assumptions = 0); //solve the problem, optionally with assumptions
+        lbool solve(const std::vector<Lit>* assumptions = 0, bool only_indep_solution = false); //solve the problem, optionally with assumptions. If only_indep_solution is set, only the independent variables set with set_independent_vars() are returned in the solution
         lbool simplify(const std::vector<Lit>* assumptions = 0); //simplify the problem, optionally with assumptions
         const std::vector<lbool>& get_model() const; //get model that satisfies the problem. Only makes sense if previous solve()/simplify() call was l_True
         const std::vector<Lit>& get_conflict() const; //get conflict in terms of the assumptions given in case the previous call to solve() was l_False
         bool okay() const; //the problem is still solveable, i.e. the empty clause hasn't been derived
+        const std::vector<Lit>& get_decisions_reaching_model() const; //get decisions that lead to model. may NOT work, in case the decisions needed were internal, extended variables. exit(-1)'s in case of such a case. you MUST check decisions_reaching_computed().
 
         ////////////////////////////
         // Debug all calls for later replay with --debuglit FILENAME
@@ -91,7 +91,6 @@ namespace CMSat {
 
         void set_num_threads(unsigned n); //Number of threads to use. Must be set before any vars/clauses are added
         void set_allow_otf_gauss(); //allow on-the-fly gaussian elimination
-        void set_gauss_config(const GaussConf& gconf); // Only for advanced usage
         void set_max_time(double max_time); //max time to run to on next solve() call
         void set_max_confl(int64_t max_confl); //max conflict to run to on next solve() call
         void set_verbosity(unsigned verbosity = 0); //default is 0, silent
@@ -100,9 +99,13 @@ namespace CMSat {
         void set_no_simplify_at_startup(); //doesn't simplify at start, faster startup time
         void set_no_equivalent_lit_replacement(); //don't replace equivalent literals
         void set_no_bva(); //No bounded variable addition
+        void set_no_bve(); //No bounded variable elimination
         void set_greedy_undef(); //Try to set variables to l_Undef in solution
         void set_independent_vars(std::vector<uint32_t>* ind_vars);
         void set_timeout_all_calls(double secs); //max timeout on all subsequent solve() or simplify
+        void set_up_for_scalmc(); //used to set the solver up for ScalMC configuration
+        void set_need_decisions_reaching(); //set it before calling solve()
+        bool get_decision_reaching_valid() const; //the get_decisions_reaching_model will work -- it may NOT be
 
 
         ////////////////////////////
@@ -111,6 +114,7 @@ namespace CMSat {
         static const char* get_version(); //get solver version in string format
         static const char* get_version_sha1(); //get SHA1 version string of the solver
         static const char* get_compilation_env(); //get compilation environment string
+        std::string get_text_version_info();  //get printable version and copyright text
 
 
         ////////////////////////////
@@ -133,6 +137,8 @@ namespace CMSat {
         void print_stats() const; //print solving stats. Call after solve()/simplify()
         void set_drat(std::ostream* os, bool set_ID); //set drat to ostream, e.g. stdout or a file
         void interrupt_asap(); //call this asynchronously, and the solver will try to cleanly abort asap
+        void dump_irred_clauses(std::ostream *out) const; //dump irredundant clauses to this stream when solving finishes
+        void dump_red_clauses(std::ostream *out) const; //dump redundant ("learnt") clauses to this stream when solving finishes
         void open_file_and_dump_irred_clauses(std::string fname) const; //dump irredundant clauses to this file when solving finishes
         void open_file_and_dump_red_clauses(std::string fname) const; //dump redundant ("learnt") clauses to this file when solving finishes
         void add_in_partial_solving_stats(); //used only by Ctrl+C handler. Ignore.
@@ -144,6 +150,18 @@ namespace CMSat {
         ////////////////////////////
         std::vector<Lit> get_zero_assigned_lits() const; //get literals of fixed value
         std::vector<std::pair<Lit, Lit> > get_all_binary_xors() const; //get all binary XORs that are = 0
+
+        //////////////////////
+        // EXPERIMENTAL
+        std::vector<std::pair<std::vector<uint32_t>, bool> > get_recovered_xors(bool elongate) const; //get XORs recovered. If "elongate" is TRUE, then variables shared ONLY by two XORs will be XORed together
+
+        //////////////////////
+        //Below must be done in-order. Multi-threading not allowed.
+        // EXPERIMENTAL!!!
+
+        void start_getting_small_clauses(uint32_t max_len, uint32_t max_glue);
+        bool get_next_small_clause(std::vector<Lit>& ret); //returns FALSE if no more
+        void end_getting_small_clauses();
 
     private:
 

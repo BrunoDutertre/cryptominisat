@@ -906,6 +906,203 @@ TEST(propagate, prop_complex)
     EXPECT_EQ(lits.size(), 5);
 }
 
+TEST(independent, indep1)
+{
+    SolverConf conf;
+    conf.simplify_at_startup = true;
+    SATSolver s(&conf);
+
+    s.new_vars(30);
+    s.add_clause(str_to_cl("1, 2, 3, 4"));
+    s.add_clause(str_to_cl("-5, 6"));
+
+    vector<uint32_t> x{4U};
+    s.set_independent_vars(&x);
+
+    lbool ret = s.solve(NULL, true);
+    EXPECT_EQ(ret, l_True);
+    EXPECT_EQ(s.get_model()[0], l_Undef);
+    EXPECT_EQ(s.get_model()[1], l_Undef);
+    EXPECT_NE(s.get_model()[4], l_Undef);
+
+    ret = s.solve();
+    EXPECT_EQ(ret, l_True);
+    EXPECT_NE(s.get_model()[0], l_Undef);
+    EXPECT_NE(s.get_model()[1], l_Undef);
+    EXPECT_NE(s.get_model()[4], l_Undef);
+}
+
+TEST(independent, indep2)
+{
+    SolverConf conf;
+    conf.simplify_at_startup = true;
+    SATSolver s(&conf);
+
+    s.new_vars(30);
+    s.add_clause(str_to_cl("1, 2, 3, 4"));
+    s.add_clause(str_to_cl("-5, 6"));
+
+    vector<uint32_t> x{0U,1U,2U,3U,4U,5U};
+    s.set_independent_vars(&x);
+
+    lbool ret = s.solve(NULL, true);
+    EXPECT_EQ(ret, l_True);
+    for(uint32_t i = 0; i < 6; i++) {
+        EXPECT_NE(s.get_model()[i], l_Undef);
+    }
+    EXPECT_EQ(s.get_model()[6], l_Undef);
+}
+
+
+
+TEST(xor_recovery, find_1_3_xor)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U}, false);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(false);
+    EXPECT_EQ(xors.size(), 1);
+}
+
+TEST(xor_recovery, find_1_3_xor2)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U}, true);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(false);
+    EXPECT_EQ(xors.size(), 1);
+}
+
+TEST(xor_recovery, find_2_3_xor)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_clause(str_to_cl("1,2,3,4,5"));
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U}, false);
+    s.add_xor_clause(vector<unsigned>{0U, 2U, 3U}, false);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(false);
+    EXPECT_EQ(xors.size(), 2);
+}
+
+TEST(xor_recovery, find_2_3_xor_elongate)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_clause(str_to_cl("1,2,3,4,5"));
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U}, false);
+    s.add_xor_clause(vector<unsigned>{0U, 3U, 4U}, false);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(true);
+    EXPECT_EQ(xors.size(), 1);
+    EXPECT_EQ(xors[0].first, (vector<uint32_t>{1U, 2U, 3U, 4U}));
+    EXPECT_EQ(xors[0].second, false);
+}
+
+TEST(xor_recovery, find_1_3_xor_exact)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U}, false);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(false);
+    EXPECT_EQ(xors.size(), 1);
+    EXPECT_EQ(xors[0].first, (vector<uint32_t>{0U, 1U, 2U}));
+    EXPECT_EQ(xors[0].second, false);
+}
+
+TEST(xor_recovery, find_1_3_xor_exact2)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U}, true);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(false);
+    EXPECT_EQ(xors.size(), 1);
+    EXPECT_EQ(xors[0].first, (vector<uint32_t>{0U, 1U, 2U}));
+    EXPECT_EQ(xors[0].second, true);
+}
+
+TEST(xor_recovery, find_1_4_xor_exact)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U, 3U}, false);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(false);
+    EXPECT_EQ(xors.size(), 1);
+    EXPECT_EQ(xors[0].first, (vector<uint32_t>{0U, 1U, 2U, 3U}));
+}
+
+TEST(xor_recovery, find_xor_one_only)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U, 3U, 4U, 5U}, false);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(true);
+    EXPECT_EQ(xors.size(), 1);
+    EXPECT_EQ(xors[0].first, (vector<uint32_t>{0U, 1U, 2U, 3U, 4U, 5U}));
+}
+
+TEST(xor_recovery, find_xor_none_because_internal_var)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U, 3U, 4U, 5U}, true);
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(false);
+    EXPECT_EQ(xors.size(), 0);
+}
+
+//TODO the renubmering make 31 out of 3 and then it's not "outside" anymore...
+TEST(xor_recovery, DISABLED_find_xor_renumber)
+{
+    SATSolver s;
+    s.new_vars(30);
+    s.set_no_bve();
+    s.set_verbosity(5);
+
+    s.add_xor_clause(vector<unsigned>{0U, 1U}, false);
+    s.add_xor_clause(vector<unsigned>{0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U}, true);
+    s.simplify();
+    s.simplify();
+
+    vector<std::pair<vector<uint32_t>, bool> > xors = s.get_recovered_xors(true);
+    EXPECT_EQ(xors.size(), 1);
+    EXPECT_EQ(xors[0].first, (vector<uint32_t>{1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U}));
+}
+
+
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

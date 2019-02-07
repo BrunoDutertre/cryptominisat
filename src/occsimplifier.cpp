@@ -122,11 +122,17 @@ OccSimplifier::~OccSimplifier()
 void OccSimplifier::new_var(const uint32_t /*orig_outer*/)
 {
     n_occurs.insert(n_occurs.end(), 2, 0);
+    if (solver->conf.independent_vars) {
+        indep_vars.insert(indep_vars.end(), 1, 0);
+    }
 }
 
 void OccSimplifier::new_vars(size_t n)
 {
     n_occurs.insert(n_occurs.end(), n*2ULL, 0);
+    if (solver->conf.independent_vars) {
+        indep_vars.insert(indep_vars.end(), n, 0);
+    }
 }
 
 void OccSimplifier::save_on_var_memory()
@@ -173,8 +179,9 @@ void OccSimplifier::print_blocked_clauses_reverse() const
     }
 }
 
-void OccSimplifier::dump_blocked_clauses(std::ostream* outfile) const
+uint32_t OccSimplifier::dump_blocked_clauses(std::ostream* outfile) const
 {
+    uint32_t num_cls = 0;
     for (BlockedClauses blocked: blockedClauses) {
         if (blocked.toRemove)
             continue;
@@ -185,16 +192,22 @@ void OccSimplifier::dump_blocked_clauses(std::ostream* outfile) const
                 continue;
             }
             Lit l = blocked.at(i, blkcls);
+            if (outfile != NULL) {
+                if (l == lit_Undef) {
+                    *outfile
+                    << " 0"
+                    << endl;
+                } else {
+                    *outfile
+                    << l << " ";
+                }
+            }
             if (l == lit_Undef) {
-                *outfile
-                << " 0"
-                << endl;
-            } else {
-                *outfile
-                << l << " ";
+                num_cls++;
             }
         }
     }
+    return num_cls;
 }
 
 void OccSimplifier::extend_model(SolutionExtender* extender)
@@ -223,6 +236,7 @@ void OccSimplifier::extend_model(SolutionExtender* extender)
         Lit blockedOn = solver->varReplacer->get_lit_replaced_with_outer(it->at(0, blkcls));
         size_t at = 1;
         bool satisfied = false;
+        lits.clear();
         while(at < it->size()) {
             if (it->at(at, blkcls) == lit_Undef) {
                 if (!satisfied) {
@@ -231,8 +245,9 @@ void OccSimplifier::extend_model(SolutionExtender* extender)
                     #ifndef DEBUG_VARELIM
                     //all should be satisfied in fact
                     //no need to go any further
-                    if (var_set)
+                    if (var_set) {
                         break;
+                    }
                     #endif
                 }
                 satisfied = false;
@@ -240,18 +255,18 @@ void OccSimplifier::extend_model(SolutionExtender* extender)
             } else if (!satisfied) {
                 Lit l = it->at(at, blkcls);
                 l = solver->varReplacer->get_lit_replaced_with_outer(l);
+                lits.push_back(l);
 
                 //Blocked clause can be skipped, it's satisfied
                 if (solver->model_value(l) == l_True) {
                     satisfied = true;
                 }
-                lits.push_back(l);
             }
             at++;
         }
         extender->dummyBlocked(blockedOn.var());
     }
-    if (solver->conf.verbosity) {
+    if (solver->conf.verbosity >= 2) {
         cout << "c [extend] Extended " << blockedClauses.size() << " var-elim clauses" << endl;
     }
 }
@@ -361,7 +376,11 @@ lbool OccSimplifier::clean_clause(ClOffset offset)
     }
 
     if (i-j > 0) {
-        (*solver->drat) << add << cl << fin << findelay;
+        (*solver->drat) << add << cl
+        #ifdef STATS_NEEDED
+        << solver->sumConflicts
+        #endif
+        << fin << findelay;
     } else {
         solver->drat->forget_delay();
     }
@@ -434,7 +453,11 @@ bool OccSimplifier::complete_clean_clause(Clause& cl)
 
     //Drat
     if (i - j > 0) {
-        (*solver->drat) << add << cl << fin << findelay;
+        (*solver->drat) << add << cl
+        #ifdef STATS_NEEDED
+        << solver->sumConflicts
+        #endif
+        << fin << findelay;
     } else {
         solver->drat->forget_delay();
     }
@@ -690,10 +713,15 @@ void OccSimplifier::eliminate_empty_resolvent_vars()
     assert(cl_to_free_later.empty());
     assert(solver->watches.get_smudged_list().empty());
 
-    for(size_t var = solver->mtrand.randInt(solver->nVars()), num = 0
+    ///Nothing to do
+    if (solver->nVars() == 0)
+        return;
+
+    for(size_t var = solver->mtrand.randInt(solver->nVars()-1), num = 0
         ; num < solver->nVars() && *limit_to_decrease > 0
         ; var = (var + 1) % solver->nVars(), num++
     ) {
+        assert(var == var % solver->nVars());
         if (!can_eliminate_var(var))
             continue;
 
@@ -732,10 +760,19 @@ void OccSimplifier::eliminate_empty_resolvent_vars()
 
 bool OccSimplifier::can_eliminate_var(const uint32_t var) const
 {
-    assert(var <= solver->nVars());
+    #ifdef SLOW_DEBUG
+    if (solver->conf.independent_vars) {
+        assert(var < solver->nVars());
+        assert(var < indep_vars.size());
+    }
+    #endif
+
+    assert(var < solver->nVars());
     if (solver->value(var) != l_Undef
         || solver->varData[var].removed != Removed::none
-        ||  solver->var_inside_assumptions(var)
+        || solver->var_inside_assumptions(var)
+        || (solver->conf.independent_vars && indep_vars[var])
+        //|| (!solver->conf.allow_elim_xor_vars && solver->varData[var].added_for_xor)
     ) {
         return false;
     }
@@ -978,6 +1015,7 @@ bool OccSimplifier::eliminate_vars()
     last_trail = solver->trail_size();
 
     while(varelim_num_limit > 0
+        && varelim_linkin_limit_bytes > 0
         && *limit_to_decrease > 0
         && grow < (uint32_t)solver->conf.min_bva_gain
         //&& grow < 1 //solver->conf.min_bva_gain
@@ -1005,6 +1043,7 @@ bool OccSimplifier::eliminate_vars()
             while(!velim_order.empty()
                 && *limit_to_decrease > 0
                 && varelim_num_limit > 0
+                && varelim_linkin_limit_bytes > 0
                 && !solver->must_interrupt_asap()
             ) {
                 assert(limit_to_decrease == &norm_varelim_time_limit);
@@ -1117,6 +1156,17 @@ bool OccSimplifier::eliminate_vars()
             cout << "c Reduced to " << solver->get_num_free_vars() << " vars"
             << ", " << sum_irred_cls_longs() + solver->binTri.irredBins
             << " cls (grow=" << grow << ")" << endl;
+
+            if (varelim_num_limit < 0
+                || varelim_linkin_limit_bytes < 0
+                || *limit_to_decrease < 0
+            ) {
+                cout << "c [occ-bve] stopped varelim due to outage. "
+                << " varelim_num_limit: "; print_value_kilo_mega(varelim_num_limit);
+                cout << " varelim_linkin_limit_bytes: "; print_value_kilo_mega(varelim_linkin_limit_bytes);
+                cout << " *limit_to_decrease: "; print_value_kilo_mega(*limit_to_decrease);
+                cout << endl;
+            }
         }
 
 
@@ -1158,7 +1208,7 @@ end:
     }
     if (solver->conf.verbosity) {
         if (solver->conf.verbosity >= 3)
-            runStats.print(solver->nVars());
+            runStats.print(solver->nVarsOuter());
         else
             runStats.print_short();
     }
@@ -1178,7 +1228,7 @@ end:
     bvestats_global += bvestats;
 
     //exit(0);
-    return solver->ok;
+    return solver->okay();
 }
 
 void OccSimplifier::free_clauses_to_free()
@@ -1217,6 +1267,60 @@ bool OccSimplifier::fill_occur_and_print_stats()
     return true;
 }
 
+struct MyOccSorter
+{
+    MyOccSorter(const Solver* _solver) :
+        solver(_solver)
+    {
+    }
+    bool operator()(const Watched& w1, const Watched& w2)
+    {
+        if (w2.isBin())
+            return false;
+
+        if (w1.isBin() && !w2.isBin())
+            return true;
+
+        //both are non-bin
+        const Clause* cl1 = solver->cl_alloc.ptr(w1.get_offset());
+        const Clause* cl2 = solver->cl_alloc.ptr(w2.get_offset());
+
+        //The other is at least as good, this is removed
+        if (cl1->freed() || cl1->getRemoved())
+            return false;
+
+        //The other is not removed, so it's better
+        if (cl2->freed() || cl2->getRemoved())
+            return true;
+
+        const uint32_t sz1 = cl1->size();
+        const uint32_t sz2 = cl2->size();
+        return sz1 < sz2;
+    }
+
+    const Solver* solver;
+};
+
+void OccSimplifier::sort_occurs_and_set_abst()
+{
+    for(auto& ws: solver->watches) {
+        std::sort(ws.begin(), ws.end(), MyOccSorter(solver));
+
+        for(Watched& w: ws) {
+            if (w.isClause()) {
+                Clause* cl = solver->cl_alloc.ptr(w.get_offset());
+                if (cl->freed() || cl->getRemoved()) {
+                    w.setBlockedLit(lit_Error);
+                } else if (cl->size() >solver->conf.maxXorToFind) {
+                    w.setBlockedLit(lit_Undef);
+                } else {
+                    w.setBlockedLit(Lit::toLit(cl->abst));
+                }
+            }
+        }
+    }
+}
+
 bool OccSimplifier::execute_simplifier_strategy(const string& strategy)
 {
     std::istringstream ss(strategy);
@@ -1228,7 +1332,7 @@ bool OccSimplifier::execute_simplifier_strategy(const string& strategy)
             || solver->nVars() == 0
             || !solver->ok
         ) {
-            return solver->ok;
+            return solver->okay();
         }
 
         #ifdef SLOW_DEBUG
@@ -1249,14 +1353,25 @@ bool OccSimplifier::execute_simplifier_strategy(const string& strategy)
         if (token == "occ-backw-sub-str") {
             backward_sub_str();
         } else if (token == "occ-xor") {
-            #ifdef USE_M4RI
-            if (solver->conf.doFindXors
-                && topLevelGauss != NULL
-            ) {
+            if (solver->conf.doFindXors) {
                 XorFinder finder(this, solver);
                 finder.find_xors();
+                vector<Xor> xors = finder.xors;
+                if (!finder.xor_together_xors(xors))
+                    return false;
+
                 vector<Lit> out_changed_occur;
-                topLevelGauss->toplevelgauss(finder.xors, &out_changed_occur);
+                solver->ok = finder.add_new_truths_from_xors(xors, &out_changed_occur);
+                if (!solver->ok)
+                    return false;
+
+                #ifdef USE_M4RI
+                if (topLevelGauss != NULL) {
+                    xors = finder.remove_xors_without_connecting_vars(xors);
+                    topLevelGauss->toplevelgauss(xors, &out_changed_occur);
+                }
+                #endif
+                finder.add_xors_to_solver();
 
                 //these may have changed, recalculating occur
                 for(Lit lit: out_changed_occur) {
@@ -1264,26 +1379,15 @@ bool OccSimplifier::execute_simplifier_strategy(const string& strategy)
                     n_occurs[(~lit).toInt()] = calc_occ_data(~lit);
                 }
             }
-            #endif
-        } else if (token == "occ-gauss") {
-            if (solver->conf.doFindXors) {
-                #ifdef USE_GAUSS
-                XorFinder finder(this, solver);
-                finder.find_xors();
-                finder.xor_together_xors();
-                const bool ok = finder.add_new_truths_from_xors();
-                if (ok) {
-                    finder.add_xors_to_gauss();
-                }
-                #endif
-            }
         } else if (token == "occ-clean-implicit") {
             //BUG TODO
             //solver->clauseCleaner->clean_implicit_clauses();
         } else if (token == "occ-bve") {
             if (solver->conf.doVarElim && solver->conf.do_empty_varelim) {
                 solver->xorclauses.clear();
-                solver->clear_gauss();
+                #ifdef USE_GAUSS
+                solver->clearEnGaussMatrixes();
+                #endif
 
                 eliminate_empty_resolvent_vars();
                 eliminate_vars();
@@ -1319,7 +1423,7 @@ bool OccSimplifier::execute_simplifier_strategy(const string& strategy)
         return false;
     }
 
-    return solver->ok;
+    return solver->okay();
 }
 
 bool OccSimplifier::setup()
@@ -1333,8 +1437,10 @@ bool OccSimplifier::setup()
     n_occurs.resize(solver->nVars()*2, 0);
 
     //Test & debug
+    #ifdef DEBUG_ATTACH_MORE
     solver->test_all_clause_attached();
     solver->check_wrong_attach();
+    #endif
 
     //Clean the clauses before playing with them
     solver->clauseCleaner->remove_and_clean_all();
@@ -1361,7 +1467,7 @@ bool OccSimplifier::setup()
     }
 
     set_limits();
-    return solver->ok;
+    return solver->okay();
 }
 
 bool OccSimplifier::simplify(const bool _startup, const std::string schedule)
@@ -1372,17 +1478,34 @@ bool OccSimplifier::simplify(const bool _startup, const std::string schedule)
 
     startup = _startup;
     if (!setup()) {
-        return solver->ok;
+        return solver->okay();
     }
 
     const size_t origBlockedSize = blockedClauses.size();
     const size_t origTrailSize = solver->trail_size();
+
+
+    indep_vars.clear();
+    if (solver->conf.independent_vars) {
+        indep_vars.resize(solver->nVars(), false);
+        for(uint32_t outside_var: *solver->conf.independent_vars) {
+            uint32_t outer_var = solver->map_to_with_bva(outside_var);
+            outer_var = solver->varReplacer->get_var_replaced_with_outer(outer_var);
+            uint32_t int_var = solver->map_outer_to_inter(outer_var);
+            if (int_var < solver->nVars()) {
+                indep_vars[int_var] = true;
+            }
+        }
+    } else {
+        indep_vars.shrink_to_fit();
+    }
+
     execute_simplifier_strategy(schedule);
 
     remove_by_drat_recently_blocked_clauses(origBlockedSize);
     finishUp(origTrailSize);
 
-    return solver->ok;
+    return solver->okay();
 }
 
 bool OccSimplifier::backward_sub_str()
@@ -1419,7 +1542,7 @@ bool OccSimplifier::backward_sub_str()
     free_clauses_to_free();
     solver->clean_occur_from_removed_clauses_only_smudged();
 
-    return solver->ok;
+    return solver->okay();
 }
 
 bool OccSimplifier::fill_occur()
@@ -1741,6 +1864,7 @@ void OccSimplifier::set_limits()
     varelim_sub_str_limit *= 10;
 
     varelim_num_limit = ((double)solver->get_num_free_vars() * solver->conf.varElimRatioPerIter);
+    varelim_linkin_limit_bytes = solver->conf.var_linkin_limit_MB *1000LL*1000LL*solver->conf.var_and_mem_out_mult;
 
     if (!solver->conf.do_strengthen_with_occur) {
         strengthening_time_limit = 0;
@@ -2109,24 +2233,28 @@ int OccSimplifier::test_elim_and_fill_resolvents(const uint32_t var)
             }
 
             //Calculate new clause stats
-            #ifdef STATS_NEEDED
             ClauseStats stats;
+            bool is_xor = false;
+            #if defined(USE_GAUSS) || defined(STATS_NEEDED)
             if (it->isBin() && it2->isClause()) {
-                stats = solver->cl_alloc.ptr(it2->get_offset())->stats;
+                Clause* c = solver->cl_alloc.ptr(it2->get_offset());
+                stats = c->stats;
+                is_xor |= c->used_in_xor();
             } else if (it2->isBin() && it->isClause()) {
-                stats = solver->cl_alloc.ptr(it->get_offset())->stats;
+                Clause* c = solver->cl_alloc.ptr(it->get_offset());
+                stats = c->stats;
+                is_xor |= c->used_in_xor();
             } else if (it2->isClause() && it->isClause()) {
-                stats = ClauseStats::combineStats(
-                    solver->cl_alloc.ptr(it->get_offset())->stats
-                    , solver->cl_alloc.ptr(it2->get_offset())->stats
-                );
+                Clause* c1 = solver->cl_alloc.ptr(it->get_offset());
+                Clause* c2 = solver->cl_alloc.ptr(it2->get_offset());
+                stats = ClauseStats::combineStats(c1->stats, c2->stats);
+                is_xor |= c1->used_in_xor();
+                is_xor |= c2->used_in_xor();
             }
+            #endif
             //must clear marking that has been set due to gate
             stats.marked_clause = 0;
-            resolvents.add_resolvent(dummy, stats);
-            #else
-            resolvents.add_resolvent(dummy, ClauseStats());
-            #endif
+            resolvents.add_resolvent(dummy, stats, is_xor);
         }
     }
 
@@ -2189,6 +2317,7 @@ void OccSimplifier::print_var_eliminate_stat(const Lit lit) const
 bool OccSimplifier::add_varelim_resolvent(
     vector<Lit>& finalLits
     , const ClauseStats& stats
+    , const bool is_xor
 ) {
     bvestats.newClauses++;
     Clause* newCl = NULL;
@@ -2212,17 +2341,24 @@ bool OccSimplifier::add_varelim_resolvent(
         return false;
 
     if (newCl != NULL) {
+        newCl->set_used_in_xor(is_xor);
         linkInClause(*newCl);
         ClOffset offset = solver->cl_alloc.get_offset(newCl);
         clauses.push_back(offset);
         added_long_cl.push_back(offset);
+
+        // 4 = clause itself
+        // 8 = watch space
+        varelim_linkin_limit_bytes -= finalLits.size()*(4+8);
+        varelim_linkin_limit_bytes -= sizeof(Clause);
+
     } else if (finalLits.size() == 2) {
         added_bin_cl.push_back(std::make_pair(finalLits[0], finalLits[1]));
         n_occurs[finalLits[0].toInt()]++;
         n_occurs[finalLits[1].toInt()]++;
-        if (!solver->ok) {
-            return false;
-        }
+
+        // 8 = watch space
+        varelim_linkin_limit_bytes -= finalLits.size()*(8);
     }
 
     //Touch every var of the new clause, so we re-estimate
@@ -2334,7 +2470,9 @@ bool OccSimplifier::maybe_eliminate(const uint32_t var)
 
     //Add resolvents
     while(!resolvents.empty()) {
-        if (!add_varelim_resolvent(resolvents.back_lits(), resolvents.back_stats())) {
+        if (!add_varelim_resolvent(resolvents.back_lits(),
+            resolvents.back_stats(), resolvents.back_xor())
+        ) {
             goto end;
         }
         resolvents.pop();
@@ -2785,6 +2923,7 @@ size_t OccSimplifier::mem_used() const
     b += varElimComplexity.capacity()*sizeof(int)*2;
     b += elim_calc_need_update.mem_used();
     b += clauses.capacity()*sizeof(ClOffset);
+    b += indep_vars.capacity();
 
     return b;
 }

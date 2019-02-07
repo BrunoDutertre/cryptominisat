@@ -421,7 +421,7 @@ end:
     check_if_must_disable_otf_hyperbin_and_tred(num_props_limit);
     check_if_must_disable_cache_update();
 
-    return solver->ok;
+    return solver->okay();
 }
 
 void Prober::update_and_print_stats(const double myTime, const uint64_t num_props_limit)
@@ -442,7 +442,7 @@ void Prober::update_and_print_stats(const double myTime, const uint64_t num_prop
 
     if (solver->conf.verbosity) {
         if (solver->conf.verbosity >= 3)
-            runStats.print(solver->nVars());
+            runStats.print(solver->nVarsOuter(), solver->conf.do_print_times);
         else
             runStats.print_short(solver, time_out, time_remain);
     }
@@ -500,7 +500,12 @@ void Prober::update_cache(Lit thisLit, Lit lit, size_t numElemsSet)
             && solver->varData[ancestor.var()].removed == Removed::none
         ) {
             toEnqueue.push_back(~ancestor);
-            (*solver->drat) << add << ~ancestor << fin;
+            (*solver->drat) << add << ~ancestor
+            #ifdef STATS_NEEDED
+            << solver->clauseID++
+            << solver->sumConflicts
+            #endif
+            << fin;
             if (solver->conf.verbosity >= 10)
                 cout << "c Tautology from cache indicated we can enqueue " << (~ancestor) << endl;
         }
@@ -533,9 +538,24 @@ void Prober::check_and_set_both_prop(Lit probed_lit, uint32_t var, bool first)
             //they both imply the same
             const Lit litToEnq = Lit(var, !propValue[var]);
             toEnqueue.push_back(litToEnq);
-            (*solver->drat) << add << probed_lit << litToEnq << fin;
-            (*solver->drat) << add << ~probed_lit << litToEnq << fin;
-            (*solver->drat) << add << litToEnq << fin;
+            (*solver->drat) << add << probed_lit << litToEnq
+            #ifdef STATS_NEEDED
+            << solver->clauseID++
+            << solver->sumConflicts
+            #endif
+            << fin;
+            (*solver->drat) << add << ~probed_lit << litToEnq
+            #ifdef STATS_NEEDED
+            << solver->clauseID++
+            << solver->sumConflicts
+            #endif
+            << fin;
+            (*solver->drat) << add << litToEnq
+            #ifdef STATS_NEEDED
+            << solver->clauseID++
+            << solver->sumConflicts
+            #endif
+            << fin;
 
             if (solver->conf.verbosity >= 10)
                 cout << "c Bothprop indicated to enqueue " << litToEnq << endl;
@@ -568,7 +588,12 @@ void Prober::add_rest_of_lits_to_cache(Lit lit)
     //~lit V OTHER, and ~lit V ~OTHER are technically in
     if (taut) {
         toEnqueue.push_back(~lit);
-        (*solver->drat) << add << ~lit << fin;
+        (*solver->drat) << add << ~lit
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin;
     }
 }
 
@@ -581,7 +606,7 @@ bool Prober::check_timeout_due_to_hyperbin()
     ) {
         if (solver->conf.verbosity) {
             cout
-            << "c [probe] intra-propagation timout,"
+            << "c [probe] intra-propagation timeout,"
             << " turning off OTF hyper-bin&trans-red"
             << endl;
         }
@@ -663,8 +688,8 @@ bool Prober::try_this(const Lit lit, const bool first)
     }
 
     solver->cancelUntil<false, true>(0);
-    solver->add_otf_subsume_long_clauses();
-    solver->add_otf_subsume_implicit_clause();
+    solver->add_otf_subsume_long_clauses<true>();
+    solver->add_otf_subsume_implicit_clause<true>();
     runStats.addedBin += solver->hyper_bin_res_all();
     std::pair<size_t, size_t> tmp = solver->remove_useless_bins();
     runStats.removedIrredBin += tmp.first;
@@ -685,7 +710,7 @@ bool Prober::try_this(const Lit lit, const bool first)
         lits.push_back(~failed);
         solver->add_clause_int(lits, true);
         clear_up_before_first_set();
-        return solver->ok;
+        return solver->okay();
     } else {
         assert(solver->ok);
         runStats.bothSameAdded += toEnqueue.size();
@@ -828,7 +853,7 @@ size_t Prober::mem_used() const
 //     << " time: " << (cpuTime() - myTime)
 //     << endl;
 //
-//     return solver->ok;
+//     return solver->okay();
 // }
 //
 // const bool Prober::tryMultiLevel(const vector<uint32_t>& vars, uint32_t& enqueued, uint32_t& finished, uint32_t& numFailed)
@@ -886,10 +911,10 @@ size_t Prober::mem_used() const
 //     solver->ok = solver->propagate().isNULL();
 //     //std::exit(-1);
 //
-//     return solver->ok;
+//     return solver->okay();
 // }
 
-void Prober::Stats::print_short(const Solver* solver, const bool time_out, const double time_remain) const
+void Prober::Stats::print_short(const Solver* s, const bool time_out, const double time_remain) const
 {
     cout
     << "c [probe]"
@@ -924,6 +949,6 @@ void Prober::Stats::print_short(const Solver* solver, const bool time_out, const
     << " HP: " << std::fixed << std::setprecision(1)
     << (double)(propStats.otfHyperTime)/1000000.0  << "M"
 
-    << solver->conf.print_times(cpu_time, time_out, time_remain)
+    << s->conf.print_times(cpu_time, time_out, time_remain)
     << endl;
 }

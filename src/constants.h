@@ -69,6 +69,8 @@ THE SOFTWARE.
 #define EFFECTIVELY_USEABLE_BITS 30
 #endif
 
+#define MAX_XOR_RECOVER_SIZE 8
+
 #if defined _WIN32
     #define DLL_PUBLIC __declspec(dllexport)
 #else
@@ -101,6 +103,14 @@ THE SOFTWARE.
 #endif
 
 
+#ifdef __GNUC__
+    #define likely(x) __builtin_expect((x), 1)
+    #define unlikely(x) __builtin_expect((x), 0)
+#else
+    #define likely(x) x
+    #define unlikely(x) x
+#endif
+
 ///////////////////
 // Silent Debug
 ///////////////////
@@ -117,6 +127,7 @@ THE SOFTWARE.
 #define DEBUG_IMPLICIT_PAIRS_TRIPLETS
 #define DEBUG_IMPLICIT_STATS
 #define DEBUG_GAUSS
+#define XOR_DEBUG
 #endif
 
 #ifdef FAST_DEBUG

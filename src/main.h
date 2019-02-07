@@ -69,6 +69,7 @@ class Main
         void handle_drat_option();
         void parse_restart_type();
         void parse_polarity_type();
+        void dump_decisions_for_model();
         void check_num_threads_sanity(const unsigned thread_num) const;
 
         po::positional_options_description p;
@@ -101,7 +102,7 @@ class Main
         void printVersionInfo();
         int correctReturnValue(const lbool ret) const;
         lbool multi_solutions();
-        std::ofstream* resultfile = NULL;
+        void dump_red_file();
 
         //Config
         bool zero_exit_status = false;
@@ -113,11 +114,21 @@ class Main
         uint32_t max_nr_of_solutions = 1;
         int sql = 0;
         string sqlite_filename;
+        string decisions_for_model_fname;
+
+        //Independent vars
         vector<uint32_t> independent_vars;
+        std::string independent_vars_str = "";
+        bool only_indep_solution = false;
+
 
         //Files to read & write
         bool fileNamePresent;
         vector<string> filesToRead;
+        std::ofstream* resultfile = NULL;
+        string dump_red_fname;
+        uint32_t dump_red_max_len = 10000;
+        uint32_t dump_red_max_glue = 1000;
 
         //Drat checker
         std::ostream* dratf = NULL;

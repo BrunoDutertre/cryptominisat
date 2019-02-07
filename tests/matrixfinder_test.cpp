@@ -62,9 +62,9 @@ TEST_F(gauss, min_rows)
     xs.push_back(Xor(str_to_vars("1, 2, 3, 4"), 0));
     s->xorclauses = xs;
 
-    mf->findMatrixes();
+    mf->findMatrixes(false);
 
-    EXPECT_EQ(s->gauss_matrixes.size(), 1);
+    EXPECT_EQ(s->gmatrixes.size(), 1);
 }
 
 TEST_F(gauss, min_rows_2)
@@ -75,9 +75,9 @@ TEST_F(gauss, min_rows_2)
     xs.push_back(Xor(str_to_vars("1, 2, 3, 4"), 0));
     s->xorclauses = xs;
 
-    mf->findMatrixes();
+    mf->findMatrixes(false);
 
-    EXPECT_EQ(s->gauss_matrixes.size(), 0);
+    EXPECT_EQ(s->gmatrixes.size(), 0);
 }
 
 TEST_F(gauss, separate_1)
@@ -88,9 +88,9 @@ TEST_F(gauss, separate_1)
     xs.push_back(Xor(str_to_vars("5, 6, 7, 8"), 0));
     s->xorclauses = xs;
 
-    mf->findMatrixes();
+    mf->findMatrixes(false);
 
-    EXPECT_EQ(s->gauss_matrixes.size(), 2);
+    EXPECT_EQ(s->gmatrixes.size(), 2);
 }
 
 TEST_F(gauss, separate_2)
@@ -106,9 +106,9 @@ TEST_F(gauss, separate_2)
     xs.push_back(Xor(str_to_vars("19, 20, 12"), 0));
     s->xorclauses = xs;
 
-    mf->findMatrixes();
+    mf->findMatrixes(false);
 
-    EXPECT_EQ(s->gauss_matrixes.size(), 2);
+    EXPECT_EQ(s->gmatrixes.size(), 2);
 }
 
 TEST_F(gauss, separate_3)
@@ -128,9 +128,9 @@ TEST_F(gauss, separate_3)
     xs.push_back(Xor(str_to_vars("25, 21, 27"), 0));
     s->xorclauses = xs;
 
-    mf->findMatrixes();
+    mf->findMatrixes(false);
 
-    EXPECT_EQ(s->gauss_matrixes.size(), 3);
+    EXPECT_EQ(s->gmatrixes.size(), 3);
 }
 
 int main(int argc, char **argv) {

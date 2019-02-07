@@ -157,10 +157,13 @@ void CNF::enlarge_nonminimial_datastructs(size_t n)
 
 void CNF::enlarge_minimal_datastructs(size_t n)
 {
-    watches.resize(watches.size() + 2*n);
-    seen.resize(seen.size() + 2*n, 0);
-    seen2.resize(seen2.size() + 2*n,0);
-    permDiff.resize(seen2.size() + 2*n,0);
+    watches.insert(2*n);
+    #ifdef USE_GAUSS
+    gwatches.insert(2*n);
+    #endif
+    seen.insert(seen.end(), 2*n, 0);
+    seen2.insert(seen2.end(), 2*n, 0);
+    permDiff.insert(permDiff.end(), 2*n, 0);
 }
 
 void CNF::save_on_var_memory()
@@ -170,7 +173,14 @@ void CNF::save_on_var_memory()
     //never resize interToOuterMain, outerToInterMain
 
     watches.resize(nVars()*2);
-    watches.consolidate(); //not using the one with SQL because it's already saved
+    watches.consolidate();
+
+    #ifdef USE_GAUSS
+    gwatches.resize(nVars()*2);
+    //TODO
+    //gwatches.consolidate();
+    #endif
+
     implCache.save_on_var_memorys(nVars());
     stamp.save_on_var_memory(nVars());
     for(auto& l: longRedCls) {
@@ -398,12 +408,10 @@ void CNF::load_state(SimpleInFile& f)
 
 void CNF::test_all_clause_attached() const
 {
-#ifdef DEBUG_ATTACH_MORE
     test_all_clause_attached(longIrredCls);
     for(const vector<ClOffset>& l: longRedCls) {
         test_all_clause_attached(l);
     }
-#endif
 }
 
 void CNF::test_all_clause_attached(const vector<ClOffset>& offsets) const
@@ -459,7 +467,6 @@ bool CNF::normClauseIsAttached(const ClOffset offset) const
 
 void CNF::find_all_attach() const
 {
-#ifdef SLOW_DEBUG
     for (size_t i = 0; i < watches.size(); i++) {
         const Lit lit = Lit::toLit(i);
         for (uint32_t i2 = 0; i2 < watches[lit].size(); i2++) {
@@ -509,7 +516,6 @@ void CNF::find_all_attach() const
     for(auto& lredcls: longRedCls) {
         find_all_attach(lredcls);
     }
-#endif
 }
 
 void CNF::find_all_attach(const vector<ClOffset>& cs) const

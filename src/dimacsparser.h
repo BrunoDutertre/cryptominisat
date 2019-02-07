@@ -454,6 +454,7 @@ bool DimacsParser<C>::parse_DIMACS_main(C& in)
             lineNum++;
             break;
         case 'c':
+        case 'w':
             ++in;
             in.parseString(str);
             if (!parseComments(in, str)) {

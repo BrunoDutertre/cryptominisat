@@ -1,6 +1,11 @@
 language: cpp
 cache: ccache
 
+branches:
+  only:
+    - master
+    - coverity_scan
+
 compiler:
   - gcc
   - clang
@@ -16,12 +21,12 @@ sudo: required
 
 python:
     - "2.7"
-    - "3.6"
+    - "3.5"
 
 env:
   global:
     # below is coveralls token
-     - secure: "fZqRStzy+aN3BPTRcc97+J4oidbIXcHlAQo2Sc25WGS1pV4+NOiM/gJeh+7WDfPmszXZBHdyyg/XPXeI86OMikXL7DaG53D/6Zq+qzVehyTlHi3sT93sDs53FbwAqa5F/dDf+z74VK7P+pQZkAr96ra8sU0Pz9nWr/8XhSpdZlE="
+    - secure: "fZqRStzy+aN3BPTRcc97+J4oidbIXcHlAQo2Sc25WGS1pV4+NOiM/gJeh+7WDfPmszXZBHdyyg/XPXeI86OMikXL7DaG53D/6Zq+qzVehyTlHi3sT93sDs53FbwAqa5F/dDf+z74VK7P+pQZkAr96ra8sU0Pz9nWr/8XhSpdZlE="
 
     # below is coverity token
     - secure: "WXFslB4aWOcCtMYnNlIYLkxi0aQ8R9ApMmV3fWlGN98gm2+5aaDKsRxpy9Q25ghQNgouS894klSqJhfB9Xa7SW389LHVor3FIYvYHZC0vSQQjFMg4/kUZg+t3HXhRt4254sxIJrTXSeF/3nOq1HMVIk4UanVUp7aihEyNcfJ6rk="
@@ -44,7 +49,6 @@ env:
     - CMS_CONFIG=INTREE_BUILD
     - CMS_CONFIG=NOTEST
     - CMS_CONFIG=STATIC
-    - CMS_CONFIG=COVERAGE
     - CMS_CONFIG=ONLY_SIMPLE_STATIC
 
 matrix:
@@ -114,11 +118,16 @@ addons:
     build_command: "make"
     branch_pattern: coverity_scan
 
+  sonarcloud:
+    organization: "msoos-github"
+    token:
+      secure: "dtJVVMl23o7LVhjk4M3eGOc4e7NGaWQ/mRBLxOTkg1fsspi4drrzID24hD4YxTt2sYkwdxOLrKMuXdFs28L0Dc3K/2ktJW2vz+HzasDScIAaec2Mv0siT/O6PIBzT0BUo1tZrap4zQBGFziDpUFPBIR55OOI7OfKIh9fbtfuCwE="
+
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx"   ]]; then brew update; fi
   # we probably want to install python 3 though...
   - if [[ ("$TRAVIS_OS_NAME" == "osx")  &&  ("$CMS_CONFIG" != "NORMAL_PYTHON2") ]]; then brew upgrade python --universal; fi
-  -  if [[ "$TRAVIS_OS_NAME" == "osx"  ]]; then sudo easy_install pip; fi
+  # -  if [[ "$TRAVIS_OS_NAME" == "osx"  ]]; then sudo easy_install pip; fi
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update; fi
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -y --force-yes help2man; fi
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -y --force-yes python3-pip; fi
@@ -132,8 +141,14 @@ install:
   - if [[ "$CMS_CONFIG" == "COVERAGE" ]]; then ./scripts/travis-install-lcov.sh; fi
 # lit
     # NOTE we probably should NOT use 'sudo' because Travis uses virtualenvs
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo -H pip install --upgrade pip; fi
-  - pip install --user lit
+    # curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py | sudo python
+
+  - if [[ "$TRAVIS_OS_NAME" == "osx"   ]]; then curl --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py -o get-pip.py; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx"   ]]; then sudo python get-pip.py; fi
+  - if [[ ("$TRAVIS_OS_NAME" == "linux") && ("$CMS_CONFIG" != "NORMAL_PYTHON2") ]]; then sudo -H pip3 install --upgrade pip; pip3 install --user lit; fi
+  - if [[ ("$TRAVIS_OS_NAME" == "linux") && ("$CMS_CONFIG" == "NORMAL_PYTHON2") ]]; then sudo -H pip install --upgrade pip; pip install --user lit; fi
+  - echo $PATH
+  - export PATH=$PATH:/Users/travis/Library/Python/2.7/bin
   - lit --version
   - which lit
 #submodules

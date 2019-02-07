@@ -45,6 +45,8 @@ using std::cout;
 using std::endl;
 using std::string;
 
+enum class gret{confl, unit_confl, prop, unit_prop, nothing, nothing_fnewwatch};
+
 inline std::string restart_type_to_string(const Restart type)
 {
     switch(type) {
@@ -56,9 +58,6 @@ inline std::string restart_type_to_string(const Restart type)
 
         case Restart::luby:
             return "luby";
-
-        case Restart::backtrack:
-            return "backtrack";
 
         case Restart::glue_geom:
             return "switch-glue-geom";
@@ -80,9 +79,6 @@ inline std::string restart_type_to_short_string(const Restart type)
 
         case Restart::geom:
             return "geom";
-
-        case Restart::backtrack:
-            return "backt";
 
         case Restart::luby:
             return "luby";
@@ -198,12 +194,12 @@ inline double stats_line_percent(double num, double total)
     }
 }
 
-inline void print_value_kilo_mega(const uint64_t value)
+inline void print_value_kilo_mega(const int64_t value)
 {
-    if (value > 20*1000ULL*1000ULL) {
-        cout << " " << std::setw(4) << value/(1000ULL*1000ULL) << "M";
-    } else if (value > 20ULL*1000ULL) {
-        cout << " " << std::setw(4) << value/1000 << "K";
+    if (value > 20*1000LL*1000LL) {
+        cout << " " << std::setw(4) << value/(1000LL*1000LL) << "M";
+    } else if (value > 20LL*1000LL) {
+        cout << " " << std::setw(4) << value/1000LL << "K";
     } else {
         cout << " " << std::setw(5) << value;
     }
@@ -493,20 +489,24 @@ struct ConflStats
         }
     }
 
-    void print_short(double cpu_time) const
+    void print_short(double cpu_time, bool do_print_times) const
     {
         //Search stats
-        print_stats_line("c conflicts", numConflicts
-            , ratio_for_stat(numConflicts, cpu_time)
-            , "/ sec"
-        );
+        if (!do_print_times) {
+            print_stats_line("c conflicts", numConflicts);
+        } else {
+            print_stats_line("c conflicts", numConflicts
+                , ratio_for_stat(numConflicts, cpu_time)
+                , "/ sec"
+            );
+        }
     }
 
-    void print(double cpu_time) const
+    void print(double cpu_time, bool do_print_times) const
     {
         //Search stats
         cout << "c CONFLS stats" << endl;
-        print_short(cpu_time);
+        print_short(cpu_time, do_print_times);
 
         print_stats_line("c conflsBinIrred", conflsBinIrred
             , stats_line_percent(conflsBinIrred, numConflicts)

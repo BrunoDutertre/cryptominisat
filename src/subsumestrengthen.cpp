@@ -164,10 +164,17 @@ SubsumeStrengthen::Sub1Ret SubsumeStrengthen::strengthen_subsume_and_unlink_and_
     ) {
         ClOffset offset2 = subs[j];
         Clause& cl2 = *solver->cl_alloc.ptr(offset2);
-        if (subsLits[j] == lit_Undef) {  //Subsume
+        #ifdef USE_GAUSS
+        if (cl2.used_in_xor()) {
+            continue;
+        }
+        #endif
 
+        if (subsLits[j] == lit_Undef) {  //Subsume
+            #ifdef VERBOSE_DEBUG
             if (solver->conf.verbosity >= 6)
                 cout << "subsumed clause " << cl2 << endl;
+            #endif
 
             //If subsumes a irred, and is redundant, make it irred
             if (cl.red()
@@ -191,9 +198,16 @@ SubsumeStrengthen::Sub1Ret SubsumeStrengthen::strengthen_subsume_and_unlink_and_
             simplifier->unlink_clause(offset2, true, false, true);
             ret.sub++;
         } else { //Strengthen
+            #ifdef VERBOSE_DEBUG
             if (solver->conf.verbosity >= 6) {
                 cout << "strenghtened clause " << cl2 << endl;
             }
+            #endif
+            #ifdef USE_GAUSS
+            if (cl2.used_in_xor()) {
+                continue;
+            }
+            #endif
             remove_literal(offset2, subsLits[j]);
 
             ret.str++;
@@ -354,7 +368,7 @@ bool SubsumeStrengthen::backw_str_long_with_long()
     runStats.litsRemStrengthen += ret.str;
     runStats.strengthenTime += cpuTime() - myTime;
 
-    return solver->ok;
+    return solver->okay();
 }
 
 /**
@@ -533,7 +547,7 @@ bool SubsumeStrengthen::handle_added_long_cl(
         }
     }
 
-    return solver->ok;
+    return solver->okay();
 }
 
 void SubsumeStrengthen::remove_literal(ClOffset offset, const Lit toRemoveLit)
@@ -550,7 +564,11 @@ void SubsumeStrengthen::remove_literal(ClOffset offset, const Lit toRemoveLit)
     cl.strengthen(toRemoveLit);
     simplifier->added_cl_to_var.touch(toRemoveLit.var());
     cl.recalc_abst_if_needed();
-    (*solver->drat) << add << cl << fin << findelay;
+    (*solver->drat) << add << cl
+    #ifdef STATS_NEEDED
+    << solver->sumConflicts
+    #endif
+    << fin << findelay;
     if (!cl.red()) {
         simplifier->n_occurs[toRemoveLit.toInt()]--;
         simplifier->elim_calc_need_update.touch(toRemoveLit.var());
@@ -800,13 +818,13 @@ void SubsumeStrengthen::finishedRun()
     globalstats += runStats;
 }
 
-void SubsumeStrengthen::Stats::print_short(const Solver* solver) const
+void SubsumeStrengthen::Stats::print_short(const Solver* s) const
 {
     cout << "c [subs] long"
     << " subBySub: " << subsumedBySub
     << " subByStr: " << subsumedByStr
     << " lits-rem-str: " << litsRemStrengthen
-    << solver->conf.print_times(subsumeTime+strengthenTime)
+    << s->conf.print_times(subsumeTime+strengthenTime)
     << endl;
 }
 
@@ -867,9 +885,15 @@ SubsumeStrengthen::Sub1Ret SubsumeStrengthen::backw_sub_str_long_with_implicit(
         ClOffset offset2 = subs[j];
         Clause& cl2 = *solver->cl_alloc.ptr(offset2);
         if (subsLits[j] == lit_Undef) {  //Subsume
-
+            #ifdef VERBOSE_DEBUG
             if (solver->conf.verbosity >= 6)
                 cout << "subsumed clause " << cl2 << endl;
+            #endif
+            #ifdef USE_GAUSS
+            if (cl2.used_in_xor()) {
+                continue;
+            }
+            #endif
 
             if (!cl2.red()) {
                 ret.subsumedIrred = true;
@@ -878,9 +902,17 @@ SubsumeStrengthen::Sub1Ret SubsumeStrengthen::backw_sub_str_long_with_implicit(
             simplifier->unlink_clause(offset2, true, false, true);
             ret.sub++;
         } else { //Strengthen
+            #ifdef VERBOSE_DEBUG
             if (solver->conf.verbosity >= 6) {
                 cout << "strenghtened clause " << cl2 << endl;
             }
+            #endif
+            #ifdef USE_GAUSS
+            if (cl2.used_in_xor()) {
+                //cout << "str-ing used in XOR with bin" << endl;
+                continue;
+            }
+            #endif
             remove_literal(offset2, subsLits[j]);
 
             ret.str++;
@@ -945,8 +977,6 @@ bool SubsumeStrengthen::backw_sub_str_long_with_bins_watch(
 
 bool SubsumeStrengthen::backw_sub_str_long_with_bins()
 {
-    size_t strSucceed = 0;
-
     //Stats
     int64_t orig_time_limit = *simplifier->limit_to_decrease;
     const size_t origTrailSize = solver->trail_size();
@@ -975,12 +1005,9 @@ bool SubsumeStrengthen::backw_sub_str_long_with_bins()
     if (solver->conf.verbosity) {
         cout
         << "c [occ-backw-sub-str-long-w-bins]"
-        << " upI: " << upI
-        << " subs w bin: " << subsumedBin
-        << " str w bin: " << strBin
+        << " subs: " << subsumedBin
+        << " str: " << strBin
         << " tried: " << tried_bin_tri
-        << " str: " << strSucceed
-        //<< " toDecrease: " << *simplifier->limit_to_decrease
         << " 0-depth ass: " << solver->trail_size() - origTrailSize
         << solver->conf.print_times(time_used, time_out, time_remain)
         << endl;
@@ -998,6 +1025,6 @@ bool SubsumeStrengthen::backw_sub_str_long_with_bins()
 
     //runStats.zeroDepthAssigns = solver->trail_size() - origTrailSize;
 
-    return solver->ok;
+    return solver->okay();
 }
 

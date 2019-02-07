@@ -63,10 +63,10 @@ class CompHandler
         void new_var(const uint32_t orig_outer);
         void new_vars(const size_t n);
         void save_on_var_memory();
-        void addSavedState(vector<lbool>& solution);
+        void addSavedState(vector<lbool>& solution, vector<Lit>& decisions);
         void readdRemovedClauses();
         const RemovedClauses& getRemovedClauses() const;
-        void dump_removed_clauses(std::ostream* outfile) const;
+        uint32_t dump_removed_clauses(std::ostream* outfile) const;
         size_t get_num_vars_removed() const;
         size_t get_num_components_solved() const;
         size_t mem_used() const;

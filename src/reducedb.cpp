@@ -155,9 +155,32 @@ void ReduceDB::handle_lev2()
     total_time += cpuTime()-myTime;
 
     last_reducedb_num_conflicts = solver->sumConflicts;
-    if (solver->sqlStats) {
-        //solver->sqlStats->reduceDB(2, nbReduceDB_lev2, solver);
+}
+
+void ReduceDB::dump_sql_cl_data()
+{
+    #ifdef STATS_NEEDED
+    assert(solver->sqlStats);
+
+    for(uint32_t lev = 0; lev < solver->longRedCls.size(); lev++) {
+        auto& cc = solver->longRedCls[lev];
+        for(const auto& offs: cc) {
+            Clause* cl = solver->cl_alloc.ptr(offs);
+            assert(!cl->getRemoved());
+            assert(!cl->freed());
+            if (cl->stats.dump_number < 50000) {
+                const bool locked = solver->clause_locked(*cl, offs);
+                solver->sqlStats->reduceDB(
+                    solver
+                    , locked
+                    , cl
+                );
+                cl->stats.dump_number++;
+                cl->stats.reset_rdb_stats();
+            }
+        }
     }
+    #endif
 }
 
 void ReduceDB::handle_lev1()
@@ -187,7 +210,7 @@ void ReduceDB::handle_lev1()
                 solver->longRedCls[2].push_back(offset);
                 cl->stats.which_red_array = 2;
                 cl->stats.activity = 0;
-                solver->bumpClauseAct(cl);
+                solver->bump_cl_act<false>(cl);
                 non_recent_use++;
             } else {
                 solver->longRedCls[1][j++] = offset;
@@ -214,10 +237,6 @@ void ReduceDB::handle_lev1()
         );
     }
     total_time += cpuTime()-myTime;
-
-    if (solver->sqlStats) {
-        //solver->sqlStats->reduceDB(1, nbReduceDB_lev1, solver);
-    }
 }
 
 void ReduceDB::mark_top_N_clauses(const uint64_t keep_num)

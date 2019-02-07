@@ -529,7 +529,11 @@ void HyperEngine::add_hyper_bin(const Lit p)
         cout << "Adding hyper-bin clause: " << p << " , " << ~deepestAncestor << endl;
         #endif
         needToAddBinClause.insert(BinaryClause(p, ~deepestAncestor, true));
-        *drat << add << p << (~deepestAncestor) << fin;
+        *drat << add
+        #ifdef STATS_NEEDED
+        << clauseID++ << sumConflicts
+        #endif
+        << p << (~deepestAncestor) << fin;
 
         hyperBinNotAdded = false;
     } else {
@@ -991,6 +995,9 @@ PropResult HyperEngine::prop_normal_cl_with_ancestor_info(
     propStats.bogoProps += 4;
     const ClOffset offset = i->get_offset();
     Clause& c = *cl_alloc.ptr(offset);
+    #ifdef STATS_NEEDED
+    c.stats.clause_looked_at++;
+    #endif
 
     PropResult ret = prop_normal_helper(c, offset, j, p);
     if (ret != PROP_TODO)

@@ -45,7 +45,7 @@ DistillerLong::DistillerLong(Solver* _solver) :
     solver(_solver)
 {}
 
-bool DistillerLong::distill(const bool red)
+bool DistillerLong::distill(const bool red, bool fullstats)
 {
     assert(solver->ok);
     numCalls++;
@@ -71,7 +71,7 @@ bool DistillerLong::distill(const bool red)
 end:
     runStats += other;
     globalStats += runStats;
-    if (solver->conf.verbosity) {
+    if (solver->conf.verbosity && fullstats) {
         if (solver->conf.verbosity >= 3)
             runStats.print(solver->nVars());
         else
@@ -79,7 +79,7 @@ end:
     }
     runStats.clear();
 
-    return solver->ok;
+    return solver->okay();
 }
 
 struct ClauseSizeSorterInv
@@ -130,7 +130,15 @@ bool DistillerLong::go_through_clauses(
 
         //Get pointer
         ClOffset offset = *i;
+        ClOffset offset2;
         Clause& cl = *solver->cl_alloc.ptr(offset);
+        #ifdef USE_GAUSS
+        if (cl.used_in_xor()) {
+            offset2 = offset;
+            goto copy;
+        }
+        #endif
+
         //Time to dereference
         maxNumProps -= 5;
 
@@ -155,12 +163,15 @@ bool DistillerLong::go_through_clauses(
         }
 
         //Try to distill clause
-        ClOffset offset2 = try_distill_clause_and_return_new(
+        offset2 = try_distill_clause_and_return_new(
             offset
             , cl.red()
             , cl.stats
         );
 
+        #ifdef USE_GAUSS
+        copy:
+        #endif
         if (offset2 != CL_OFFSET_MAX) {
             *j++ = offset2;
         }
@@ -235,7 +246,7 @@ bool DistillerLong::distill_long_cls_all(
     runStats.time_used += cpuTime() - myTime;
     runStats.zeroDepthAssigns += solver->trail_size() - origTrailSize;
 
-    return solver->ok;
+    return solver->okay();
 }
 
 /*ClOffset DistillerLong::try_distill_clause_and_return_new(
@@ -417,7 +428,6 @@ ClOffset DistillerLong::try_distill_clause_and_return_new(
             << "c --> orig shortened cl:" << cl << endl;
         }
         #endif
-        runStats.numClShorten++;
         maxNumProps -= 20;
         lits.clear();
         if (True_confl) {

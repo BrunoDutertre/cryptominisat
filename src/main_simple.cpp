@@ -52,6 +52,7 @@ SATSolver* solver;
 bool zero_exit_status = false;
 static void SIGINT_handler(int) {
     cout << "\n*** INTERRUPTED ***\n";
+    solver->add_in_partial_solving_stats();
     solver->print_stats();
     cout << "\n*** INTERRUPTED ***\n";
     exit(1);
@@ -61,9 +62,9 @@ void printVersionInfo()
 {
     cout << "c CryptoMiniSat version " << solver->get_version() << endl;
     #ifdef __GNUC__
-    cout << "c compiled with gcc version " << __VERSION__ << endl;
+    cout << "c CryptoMiniSat compiled with gcc version " << __VERSION__ << endl;
     #else
-    cout << "c compiled with non-gcc compiler" << endl;
+    cout << "c CryptoMiniSat compiled with non-gcc compiler" << endl;
     #endif
 }
 
@@ -262,11 +263,7 @@ int main(int argc, char** argv)
 
         if (in == NULL) {
             std::cout << "ERROR! Could not open file: ";
-            if (argc == 1) {
-                std::cout << "<stdin>";
-            } else {
-                std::cout << argv[1] << " reason: " << strerror(errno);
-            }
+            std::cout << argv[1] << " reason: " << strerror(errno);
             std::cout << std::endl;
             std::exit(1);
         }
@@ -298,7 +295,13 @@ int main(int argc, char** argv)
     if (conf.verbosity) {
         S.print_stats();
     }
-    cout << (ret == l_True ? "s SATISFIABLE" : "s UNSATISFIABLE") << endl;
+
+    if (ret == l_True) {
+        cout << "s SATISFIABLE" << endl;
+    } else if (ret == l_False) {
+        cout << "s UNSATISFIABLE"<< endl;
+    }
+
     if (ret == l_True) {
         print_model(&std::cout, solver);
     }

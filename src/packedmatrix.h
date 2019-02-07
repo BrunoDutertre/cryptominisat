@@ -1,5 +1,12 @@
 /******************************************
-Copyright (c) 2016, Mate Soos
+Copyright (c) 2018  Mate Soos
+Copyright (c) 2012  Cheng-Shen Han
+Copyright (c) 2012  Jie-Hong Roland Jiang
+
+For more information, see " When Boolean Satisfiability Meets Gaussian
+Elimination in a Simplex Way." by Cheng-Shen Han and Jie-Hong Roland Jiang
+in CAV (Computer Aided Verification), 2012: 410-426
+
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,12 +31,8 @@ THE SOFTWARE.
 #define PACKEDMATRIX_H
 
 #include <algorithm>
-#include "constants.h"
+#include <cstdint>
 #include "packedrow.h"
-
-#if not defined(_MSC_VER)
-#include <stdlib.h>
-#endif
 
 //#define DEBUG_MATRIX
 
@@ -45,53 +48,19 @@ public:
     {
     }
 
-    PackedMatrix(const PackedMatrix& b) :
-        numRows(b.numRows)
-        , numCols(b.numCols)
-    {
-        #ifdef DEBUG_MATRIX
-        assert(b.numRows > 0 && b.numCols > 0);
-        #endif
-
-        const uint64_t needed = numRows*2*(numCols+1);
-#if defined(_MSC_VER)
-        mp = new uint64_t[needed];
-#else
-        posix_memalign((void**)&mp, 0x20, needed*sizeof(uint64_t));
-        mp = (uint64_t*)__builtin_assume_aligned((void*)mp, 0x20);
-#endif
-        memcpy(mp, b.mp, needed*sizeof(uint64_t));
-    }
-
     ~PackedMatrix()
     {
-        #if defined(_MSC_VER)
         delete[] mp;
-        #else
-        free(mp);
-        #endif
-    }
-
-    uint32_t used_mem() const
-    {
-        uint32_t mem = 0;
-        mem += numRows*2*(numCols+1)*sizeof(uint64_t);
-        return mem;
     }
 
     void resize(const uint32_t num_rows, uint32_t num_cols)
     {
         num_cols = num_cols / 64 + (bool)(num_cols % 64);
-        const uint64_t needed = num_rows*2*(num_cols+1);
-        if (numRows*2*(numCols+1) < needed) {
-            #if defined(_MSC_VER)
+        if (numRows*(numCols+1) < num_rows*(num_cols+1)) {
             delete[] mp;
-            mp = new uint64_t[needed];
-            #else
-            free(mp);
-            posix_memalign((void**)&mp, 0x20, needed*sizeof(uint64_t));
-            #endif
+            mp = new uint64_t[num_rows*(num_cols+1)];
         }
+
         numRows = num_rows;
         numCols = num_cols;
     }
@@ -111,23 +80,13 @@ public:
         //assert(b.numRows > 0 && b.numCols > 0);
         #endif
 
-        const uint64_t needed = b.numRows*2*(b.numCols+1);
-        if (numRows*2*(numCols+1) < needed) {
-            #if defined(_MSC_VER)
+        if (numRows*(numCols+1) < b.numRows*(b.numCols+1)) {
             delete[] mp;
-            mp = new uint64_t[needed];
-            #else
-            free(mp);
-            posix_memalign((void**)&mp, 0x20, needed*sizeof(uint64_t));
-            #endif
+            mp = new uint64_t[b.numRows*(b.numCols+1)];
         }
-
         numRows = b.numRows;
         numCols = b.numCols;
-        #if !defined(_MSC_VER)
-        mp = (uint64_t*)__builtin_assume_aligned((void*)mp, 0x20);
-        #endif
-        memcpy(mp, b.mp, sizeof(uint64_t)*numRows*2*(numCols+1));
+        memcpy(mp, b.mp, sizeof(uint64_t)*numRows*(numCols+1));
 
         return *this;
     }
@@ -138,38 +97,24 @@ public:
         assert(i <= numRows);
         #endif
 
-        return PackedRow(numCols, mp+i*2*(numCols+1));
+        return PackedRow(numCols, mp+i*(numCols+1));
+
     }
-    inline PackedRow getVarsetAt(const uint32_t i)
+
+    inline PackedRow getMatrixAt(const uint32_t i) const
     {
         #ifdef DEBUG_MATRIX
         assert(i <= numRows);
         #endif
 
-        return PackedRow(numCols, mp+i*2*(numCols+1)+(numCols+1));
-    }
-
-    inline const PackedRow getMatrixAt(const uint32_t i) const
-    {
-        #ifdef DEBUG_MATRIX
-        assert(i <= numRows);
-        #endif
-
-        return PackedRow(numCols, mp+i*2*(numCols+1));
-    }
-
-    inline const PackedRow getVarsetAt(const uint32_t i) const
-    {
-        #ifdef DEBUG_MATRIX
-        assert(i <= numRows);
-        #endif
-
-        return PackedRow(numCols, mp+i*2*(numCols+1)+(numCols+1));
+        return PackedRow(numCols, mp+i*(numCols+1));
     }
 
     class iterator
     {
     public:
+        friend class PackedMatrix;
+
         PackedRow operator*()
         {
             return PackedRow(numCols, mp);
@@ -177,25 +122,25 @@ public:
 
         iterator& operator++()
         {
-            mp += toadd;
+            mp += (numCols+1);
             return *this;
         }
 
         iterator operator+(const uint32_t num) const
         {
             iterator ret(*this);
-            ret.mp += toadd*num;
+            ret.mp += (numCols+1)*num;
             return ret;
         }
 
         uint32_t operator-(const iterator& b) const
         {
-            return (mp - b.mp)/(toadd);
+            return (mp - b.mp)/((numCols+1));
         }
 
         void operator+=(const uint32_t num)
         {
-            mp += toadd*num;
+            mp += (numCols+1)*num;  // add by f4
         }
 
         bool operator!=(const iterator& it) const
@@ -209,17 +154,13 @@ public:
         }
 
     private:
-        friend class PackedMatrix;
-
         iterator(uint64_t* _mp, const uint32_t _numCols) :
             mp(_mp)
             , numCols(_numCols)
-            , toadd(2*(numCols+1))
         {}
 
         uint64_t* mp;
         const uint32_t numCols;
-        const uint32_t toadd;
     };
 
     inline iterator beginMatrix()
@@ -229,17 +170,7 @@ public:
 
     inline iterator endMatrix()
     {
-        return iterator(mp+numRows*2*(numCols+1), numCols);
-    }
-
-    inline iterator beginVarset()
-    {
-        return iterator(mp+(numCols+1), numCols);
-    }
-
-    inline iterator endVarset()
-    {
-        return iterator(mp+(numCols+1)+numRows*2*(numCols+1), numCols);
+        return iterator(mp+numRows*(numCols+1), numCols);
     }
 
     inline uint32_t getSize() const
@@ -251,10 +182,9 @@ private:
 
     uint64_t* mp;
     uint32_t numRows;
-    uint32_t numCols; //where this each holds 64(!)
+    uint32_t numCols;
 };
 
-} //end namespace
+}
 
 #endif //PACKEDMATRIX_H
-

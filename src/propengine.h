@@ -147,7 +147,7 @@ protected:
     Heap<VarOrderLt> order_heap_vsids;
     Heap<VarOrderLt> order_heap_maple;
 
-    friend class Gaussian;
+    friend class EGaussian;
 
     template<bool update_bogoprops>
     PropBy propagate_any_order();
@@ -407,10 +407,9 @@ void PropEngine::enqueue(const Lit p, const PropBy from)
         watches.prefetch((~p).toInt());
     }
 
-    if (!update_bogoprops && !VSIDS) {
-        varData[v].picked = sumConflicts;
+    if (!update_bogoprops && !VSIDS && from != PropBy()) {
+        varData[v].last_picked = sumConflicts;
         varData[v].conflicted = 0;
-        varData[v].almost_conflicted = 0;
 
         assert(sumConflicts >= varData[v].cancelled);
         uint32_t age = sumConflicts - varData[v].cancelled;
@@ -428,20 +427,19 @@ void PropEngine::enqueue(const Lit p, const PropBy from)
     varData[v].level = decisionLevel();
     if (!update_bogoprops) {
         varData[v].polarity = !sign;
+        #ifdef STATS_NEEDED
+        if (sign) {
+            propStats.varSetNeg++;
+        } else {
+            propStats.varSetPos++;
+        }
+        #endif
     }
     trail.push_back(p);
 
     if (update_bogoprops) {
         propStats.bogoProps += 1;
     }
-
-    #ifdef STATS_NEEDED
-    if (sign) {
-        propStats.varSetNeg++;
-    } else {
-        propStats.varSetPos++;
-    }
-    #endif
 
     #ifdef ANIMATE3D
     std::cerr << "s " << v << " " << p.sign() << endl;

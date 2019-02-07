@@ -31,6 +31,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 namespace CMSat {
 
+class Watched;
+
 //=================================================================================================
 // Automatically resizable arrays
 //
@@ -77,11 +79,6 @@ private:
     {
         int32_t mask = (y - x) >> (sizeof(uint32_t) * 8 - 1);
         return (x & mask) + (y & (~mask));
-    }
-    //static inline void nextCap(uint32_t& cap){ cap += ((cap >> 1) + 2) & ~1; }
-    static inline void nextCap(uint32_t& cap)
-    {
-        cap += ((cap >> 1) + 2) & ~1;
     }
 
 public:
@@ -210,6 +207,11 @@ public:
         }
     }
 
+    void insert(uint32_t num)
+    {
+        growTo(sz+num);
+    }
+
     bool empty() const
     {
         return sz == 0;
@@ -241,7 +243,9 @@ void vec<T>::capacity(int32_t min_cap)
     if ((int32_t)cap >= min_cap) {
         return;
     }
-    uint32_t add = imax((min_cap - cap + 1) & ~1, ((cap >> 1) + 2) & ~1);   // NOTE: grow by approximately 3/2
+
+    // NOTE: grow by approximately 3/2
+    uint32_t add = imax((min_cap - cap + 1) & ~1, ((cap >> 1) + 2) & ~1);
     if (add > std::numeric_limits<uint32_t>::max() - cap
         || (((data = (T*)::realloc(data, (cap += (uint32_t)add) * sizeof(T))) == NULL)
             && errno == ENOMEM)
@@ -286,6 +290,17 @@ void vec<T>::clear(bool dealloc)
         for (uint32_t i = 0; i < sz; i++) {
             data[i].~T();
         }
+        sz = 0;
+        if (dealloc) {
+            free(data), data = NULL, cap = 0;
+        }
+    }
+}
+
+template<>
+inline void vec<Watched>::clear(bool dealloc)
+{
+    if (data != NULL) {
         sz = 0;
         if (dealloc) {
             free(data), data = NULL, cap = 0;

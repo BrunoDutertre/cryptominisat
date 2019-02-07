@@ -39,36 +39,34 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , every_lev1_reduce(10000) // kept for a while then moved to lev2
         , every_lev2_reduce(15000) // cleared regularly
         , must_touch_lev1_within(30000)
+
         , max_temp_lev2_learnt_clauses(30000) //only used if every_lev2_reduce==0
         , inc_max_temp_lev2_red_cls(1.0)      //only used if every_lev2_reduce==0
         , protect_cl_if_improved_glue_below_this_glue_for_one_turn(30)
         , glue_put_lev0_if_below_or_eq(3) // never removed
         , glue_put_lev1_if_below_or_eq(6) // kept for a while then moved to lev2
 
-
         , clause_decay(0.999)
         , adjust_glue_if_too_many_low(0.7)
         , min_num_confl_adjust_glue_cutoff(150ULL*1000ULL)
-        , guess_cl_effectiveness(0)
+
+        //maple
+        , maple(true)
+        , modulo_maple_iter(3)
+        , more_maple_bump_high_glue(false)
 
         //Restarting
         , restart_first(100)
         , restart_inc(1.1)
-        , burst_search_len(300)
         , restartType(Restart::glue_geom)
         , do_blocking_restart(1)
         , blocking_restart_trail_hist_length(5000)
         , blocking_restart_multip(1.4)
-        , broken_glue_restart(false)
-        , maple(true)
-        , maple_backtrack(false)
-        , maple_backtrack_mod(3)
-        , modulo_maple_iter(3)
-        , local_glue_multiplier(0.90)
-        , local_backtrack_multiplier(0.90)
+        , broken_glue_restart(true)
+        , local_glue_multiplier(0.80)
         , shortTermHistorySize (50)
         , lower_bound_for_blocking_restart(10000)
-        , ratio_glue_geom(4)
+        , ratio_glue_geom(5)
         , more_more_with_cache(false)
         , more_more_with_stamp(false)
         , doAlwaysFMinim(false)
@@ -86,12 +84,11 @@ DLL_PUBLIC SolverConf::SolverConf() :
         //Verbosity
         , verbosity        (0)
         , doPrintGateDot   (false)
-        , doPrintConflDot  (false)
         , print_full_restart_stat   (false)
         , print_all_restarts (false)
         , verbStats        (0)
         , do_print_times(1)
-        , print_restart_line_every_n_confl(4096)
+        , print_restart_line_every_n_confl(8192)
 
         //Limits
         , maxTime          (std::numeric_limits<double>::max())
@@ -102,12 +99,16 @@ DLL_PUBLIC SolverConf::SolverConf() :
 
         //OTF
         , otfHyperbin      (true)
-        , doOTFSubsume     (true)
+        , doOTFSubsume     (false)
         , doOTFSubsumeOnlyAtOrBelowGlue(5)
-        , rewardShortenedClauseWithConfl(5)
+
+        //decision-based clause generation. These values have been validated
+        //see 8099966.wlm01
+        , do_decision_based_cl(1)
+        , decision_based_cl_max_levels(9)
+        , decision_based_cl_min_learned_size(50)
 
         //SQL
-        , dump_individual_search_time(true)
         , dump_individual_restarts_and_clauses(true)
         , dump_individual_cldata_ratio(0.005)
 
@@ -121,6 +122,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , varElimRatioPerIter(1.60)
         , skip_some_bve_resolvents(true) //based on gates
         , velim_resolvent_too_large(20)
+        , var_linkin_limit_MB(1000)
 
         //Subs, str limits for simplifier
         , subsumption_time_limitM(300)
@@ -129,22 +131,26 @@ DLL_PUBLIC SolverConf::SolverConf() :
 
         //Bounded variable addition
         , do_bva(false)
+        #ifdef USE_GAUSS
+        , min_bva_gain(2)
+        #else
         , min_bva_gain(32)
+        #endif
         , bva_limit_per_call(150000)
         , bva_also_twolit_diff(true)
         , bva_extra_lit_and_red_start(0)
         , bva_time_limitM(100)
 
         //Probing
-        , doProbe          (true)
+        , doProbe          (false)
         , doIntreeProbe    (true)
         , probe_bogoprops_time_limitM  (800ULL)
         , intree_time_limitM(1200ULL)
         , intree_scc_varreplace_time_limitM(30ULL)
         , doBothProp       (true)
         , doTransRed       (true)
-        , doStamp          (true)
-        , doCache          (true)
+        , doStamp          (false)
+        , doCache          (false)
         , cacheUpdateCutoff(2000)
         , maxCacheSizeMB   (2048)
         , otf_hyper_time_limitM(340)
@@ -153,16 +159,21 @@ DLL_PUBLIC SolverConf::SolverConf() :
 
         //XOR
         , doFindXors       (true)
-        , maxXorToFind     (6)
+        , maxXorToFind     (7)
+        , maxXorToFindSlow (5)
         , useCacheWhenFindingXors(false)
-        , doEchelonizeXOR  (true)
-        , maxXORMatrix     (10LL*1000LL*1000LL)
-        , xor_finder_time_limitM(60)
+        , maxXORMatrix     (400ULL)
+        #ifndef USE_GAUSS
+        , xor_finder_time_limitM(50)
+        #else
+        , xor_finder_time_limitM(400)
+        #endif
+        , allow_elim_xor_vars(1)
+        , xor_var_per_cut(2)
 
         //Var-replacer
         , doFindAndReplaceEqLits(true)
         , doExtendedSCC         (true)
-        , sccFindPercent        (0.04)
         , max_scc_depth (10000)
 
         //Iterative Alo Scheduling
@@ -178,13 +189,12 @@ DLL_PUBLIC SolverConf::SolverConf() :
             "sub-impl,"
             "occ-backw-sub-str, occ-clean-implicit, occ-bve,"
             "occ-backw-sub-str, occ-xor,"
+            "cl-consolidate," //consolidate after OCC
             "scc-vrepl,"
             "sub-cls-with-bin,"
-            #ifdef USE_GAUSS
-            //occ--gauss must be last
-            "occ-gauss"
-            #endif
         )
+
+        //validated with run 8114195.wlm01
         , simplify_schedule_nonstartup(
             "handle-comps,"
             "scc-vrepl, cache-clean, cache-tryboth,"
@@ -193,12 +203,9 @@ DLL_PUBLIC SolverConf::SolverConf() :
             "scc-vrepl, sub-impl, str-impl, sub-impl,"
             "occ-backw-sub-str, occ-clean-implicit, occ-bve, occ-bva, "//occ-gates,"
             "occ-xor,"
+            "cl-consolidate," //consolidate after OCC
             "str-impl, cache-clean, sub-str-cls-with-bin, distill-cls,"
             "scc-vrepl, check-cache-size, renumber,"
-            #ifdef USE_GAUSS
-            //occ--gauss must be last
-            "occ-gauss"
-            #endif
         )
         , simplify_schedule_preproc(
             "handle-comps,"
@@ -207,6 +214,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
             "sub-str-cls-with-bin, distill-cls, scc-vrepl, sub-impl,"
             "occ-backw-sub-str, occ-xor, occ-clean-implicit, occ-bve, occ-bva,"
             //"occ-gates,"
+            "cl-consolidate," //consolidate after OCC
             "str-impl, cache-clean, sub-str-cls-with-bin, distill-cls, scc-vrepl, sub-impl,"
             "str-impl, sub-impl, sub-str-cls-with-bin,"
             "intree-probe, probe,"
@@ -231,9 +239,10 @@ DLL_PUBLIC SolverConf::SolverConf() :
         //Memory savings
         , doRenumberVars   (true)
         , doSaveMem        (true)
+        , full_watch_consolidate_every_n_confl (4ULL*1000ULL*1000ULL) //validated in run 8113323.wlm01
 
         //Component finding
-        , doCompHandler    (true)
+        , doCompHandler    (false)
         , handlerFromSimpNum (0)
         , compVarLimit      (1ULL*1000ULL*1000ULL)
         , comp_find_time_limitM (500)
@@ -255,7 +264,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
 
         //Greedy Undef
         , greedy_undef(false)
-        , independent_vars (NULL)
+        , independent_vars(NULL)
 
         //Timeouts
         , orig_global_timeout_multiplier(4.0)
@@ -271,6 +280,7 @@ DLL_PUBLIC SolverConf::SolverConf() :
         , reconfigure_at(2)
         , preprocess(0)
         , simulate_drat(false)
+        , need_decisions_reaching(false)
         , saved_state_file("savedstate.dat")
 {
     ratio_keep_clauses[clean_to_int(ClauseClean::glue)] = 0;

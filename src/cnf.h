@@ -24,6 +24,7 @@ THE SOFTWARE.
 #define __CNF_H__
 
 #include <atomic>
+#include <limits>
 
 #include "constants.h"
 #include "vardata.h"
@@ -37,7 +38,10 @@ THE SOFTWARE.
 #include "clauseallocator.h"
 #include "varupdatehelper.h"
 #include "simplefile.h"
+#include "gausswatched.h"
 #include "xor.h"
+
+using std::numeric_limits;
 
 namespace CMSat {
 
@@ -47,7 +51,6 @@ struct BinTriStats
 {
     uint64_t irredBins = 0;
     uint64_t redBins = 0;
-    uint64_t numNewBinsSinceSCC = 0;
 };
 
 struct LitStats
@@ -86,9 +89,14 @@ public:
 
     ClauseAllocator cl_alloc;
     SolverConf conf;
-    //If FALSE, state of CNF is UNSAT
-    bool ok = true;
-    watch_array watches;  ///< 'watches[lit]' is a list of constraints watching 'lit'
+
+    bool ok = true; //If FALSE, state of CNF is UNSAT
+
+    watch_array watches;
+    #ifdef USE_GAUSS
+    vec<vec<GaussWatched>> gwatches;
+    uint32_t gqhead;
+    #endif
     vector<VarData> varData;
     bool VSIDS = true;
     vector<uint32_t> depth;
@@ -103,6 +111,9 @@ public:
 
     //Clauses
     vector<ClOffset> longIrredCls;
+
+    //if the solver object only saw add_clause and new_var(s)
+    bool fresh_solver = true;
 
     /**
     level 0 = never remove
@@ -259,6 +270,8 @@ public:
     void check_no_duplicate_lits_anywhere() const;
     void check_clid_correct() const;
     void print_all_clauses() const;
+    template<class T> void clean_xor_no_prop(T& ps, bool& rhs);
+    template<class T> void clean_xor_vars_no_prop(T& ps, bool& rhs);
     uint64_t count_lits(
         const vector<ClOffset>& clause_array
         , const bool red
@@ -554,6 +567,69 @@ inline void CNF::check_clid_correct() const
     }
     #endif
 }
+
+template<class T>
+void CNF::clean_xor_no_prop(T& ps, bool& rhs)
+{
+    std::sort(ps.begin(), ps.end());
+    Lit p;
+    uint32_t i, j;
+    for (i = j = 0, p = lit_Undef; i != ps.size(); i++) {
+        assert(ps[i].sign() == false);
+
+        if (ps[i].var() == p.var()) {
+            //added, but easily removed
+            j--;
+            p = lit_Undef;
+
+            //Flip rhs if neccessary
+            if (value(ps[i]) != l_Undef) {
+                rhs ^= value(ps[i]) == l_True;
+            }
+
+        } else if (value(ps[i]) == l_Undef) {
+            //Add and remember as last one to have been added
+            ps[j++] = p = ps[i];
+
+            assert(varData[p.var()].removed != Removed::elimed);
+        } else {
+            //modify rhs instead of adding
+            rhs ^= value(ps[i]) == l_True;
+        }
+    }
+    ps.resize(ps.size() - (i - j));
+}
+
+template<class T>
+void CNF::clean_xor_vars_no_prop(T& ps, bool& rhs)
+{
+    std::sort(ps.begin(), ps.end());
+    uint32_t p;
+    uint32_t i, j;
+    for (i = j = 0, p = numeric_limits<uint32_t>::max(); i != ps.size(); i++) {
+        if (ps[i] == p) {
+            //added, but easily removed
+            j--;
+            p = numeric_limits<uint32_t>::max();
+
+            //Flip rhs if neccessary
+            if (value(ps[i]) != l_Undef) {
+                rhs ^= value(ps[i]) == l_True;
+            }
+
+        } else if (value(ps[i]) == l_Undef) {
+            //Add and remember as last one to have been added
+            ps[j++] = p = ps[i];
+
+            assert(varData[p].removed != Removed::elimed);
+        } else {
+            //modify rhs instead of adding
+            rhs ^= value(ps[i]) == l_True;
+        }
+    }
+    ps.resize(ps.size() - (i - j));
+}
+
 
 }
 

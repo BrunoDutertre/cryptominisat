@@ -48,7 +48,7 @@ def unique_file(fname_begin, fname_end=".cnf"):
 
             counter += 1
             if counter > 300:
-                print("Cannot create unique_file, last try was: %s", fname)
+                print("Cannot create unique_file, last try was: %s" % fname)
                 exit(-1)
 
 
@@ -112,10 +112,70 @@ class solution_parser:
         f.close()
         print("Verified %d original xor&regular clauses" % clauses)
 
+    def indep_vars_solution_check(self, fname, indep_vars, solution):
+        assert len(indep_vars) > 0
+        a = XorToCNF()
+        tmpfname = unique_file("tmp_for_xor_to_cnf_convert")
+        a.convert(fname, tmpfname)
+
+        with open(tmpfname, "a") as f:
+            # NOTE: the "p cnf..." header will be wrong
+            for i in indep_vars:
+                if i not in solution:
+                    print("ERROR: solution does not contain independent var %d" % i)
+                    print("Independent vars were: %s" % indep_vars)
+                    exit(-1)
+
+                if solution[i]:
+                    f.write("%d 0\n" % i)
+                else:
+                    f.write("-%d 0\n" % i)
+
+        print("-> added partial solution to temporary CNF file %s" % tmpfname)
+
+        # execute with the other solver
+        toexec = "../../build/tests/minisat/minisat -verb=0 %s" % tmpfname
+        print("Solving with other solver: %s" % toexec)
+        curr_time = time.time()
+        try:
+            p = subprocess.Popen(toexec.rsplit(),
+                                 stdout=subprocess.PIPE,
+                                 preexec_fn=partial(setlimits, self.options.maxtime),
+                                 universal_newlines=True)
+        except OSError:
+            print("ERROR: Minisat didn't run... weird, it's included as a submodule")
+            raise
+
+        consoleOutput2 = p.communicate()[0]
+        os.unlink(tmpfname)
+
+        # if other solver was out of time, then we can't say anything
+        diff_time = time.time() - curr_time
+        if diff_time > self.options.maxtime - self.options.maxtimediff:
+            print("Other solver: too much time to solve, aborted!")
+            return None
+
+        # extract output from the other solver
+        print("Checking other solver output...")
+        otherSolverUNSAT, _, _ = self.parse_solution_from_output(
+            consoleOutput2.split("\n"))
+
+        # check if the other solver finds a solution with the independent vars
+        # set as per partial solution returned
+        if otherSolverUNSAT is True:
+            print("ERROR; The other solver did NOT find a solution with the partial solution given")
+            exit(-1)
+            return False
+
+        print("OK, other solver found a solution using the partial solution")
+
+        return True
+
     def check_unsat(self, fname):
         a = XorToCNF()
         tmpfname = unique_file("tmp_for_xor_to_cnf_convert")
         a.convert(fname, tmpfname)
+
         # execute with the other solver
         toexec = "../../build/tests/minisat/minisat -verb=0 %s" % tmpfname
         print("Solving with other solver: %s" % toexec)
@@ -200,8 +260,7 @@ class solution_parser:
         if len(output_lines) == 0:
             print("Error! SAT solver output is empty!")
             print("output lines: %s" % output_lines)
-            print("Error code 500")
-            exit(500)
+            exit(-1)
 
         # solution will be put here
         satunsatfound = False
@@ -258,7 +317,7 @@ class solution_parser:
 
             print("Error! SAT solver output contains a line that is neither 'v' nor 'c' nor 's'!")
             print("Line is:", line.strip())
-            exit(500)
+            exit(-1)
 
         # print("Parsed values:", solution)
 
@@ -268,7 +327,7 @@ class solution_parser:
             print("Error: Cannot find line starting with 's' or 'v' in output!")
             print(output_lines)
             print("Error code 500")
-            exit(500)
+            exit(-1)
 
         if (ignoreNoSolution is True and
                 (satunsatfound is False or (
@@ -281,13 +340,13 @@ class solution_parser:
             print("Error: Cannot find if SAT or UNSAT. Maybe didn't finish running?")
             print(output_lines)
             print("Error code 500")
-            exit(500)
+            exit(-1)
 
         if (unsat is False and vlinefound is False):
             print("Error: Solution is SAT, but no 'v' line")
             print (output_lines)
             print("Error code 500")
-            exit(500)
+            exit(-1)
 
         return unsat, solution, conflict
 
@@ -396,12 +455,29 @@ class solution_parser:
 
     def _find_largest_debuglib_part(self, fname):
         largestPart = 0
-        dirList2 = os.listdir(".")
+        dirList2 = os.listdir("out/.")
+        fname_no_out = fname.replace("out/", "")
         for fname_debug in dirList2:
-            if fnmatch.fnmatch(fname_debug, "%s-debugLibPart*.output" % fname):
+            if fnmatch.fnmatch(fname_debug, "%s-debugLibPart*.output" % fname_no_out):
                 largestPart += 1
 
         return largestPart
+
+    @staticmethod
+    def max_vars_in_file(fname):
+        maxvar = 0
+        with open(fname, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                # ignore comments
+                if not line or line[0] == "c" or line[0] == 'p':
+                    continue
+
+                # calculate max variable
+                maxvar = max(maxvar, get_max_var_from_clause(line))
+
+        return maxvar
 
     @staticmethod
     def _check_regular_clause(line, solution):

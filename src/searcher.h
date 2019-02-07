@@ -29,16 +29,22 @@ THE SOFTWARE.
 #include "solvertypes.h"
 #include "time_mem.h"
 #include "hyperengine.h"
-#include "minisat_rnd.h"
+#include "MersenneTwister.h"
 #include "simplefile.h"
 #include "searchstats.h"
+#include "gqueuedata.h"
+
+#ifdef CMS_TESTING_ENABLED
+#include "gtest/gtest_prod.h"
+#endif
+
 
 namespace CMSat {
 
 class Solver;
 class SQLStats;
 class VarReplacer;
-class Gaussian;
+class EGaussian;
 class DistillerLong;
 
 using std::string;
@@ -67,23 +73,20 @@ class Searcher : public HyperEngine
         ///////////////////////////////
         // Solving
         //
-        lbool solve(
-            uint64_t max_confls
-            , const unsigned upper_level_iteration_num
-        );
+        lbool solve(uint64_t max_confls);
         void finish_up_solve(lbool status);
         void reduce_db_if_needed();
         bool clean_clauses_if_needed();
-        lbool perform_scc_and_varreplace_if_needed();
         void check_calc_features();
         void dump_search_loop_stats(double myTime);
         bool must_abort(lbool status);
         uint64_t luby_loop_num = 0;
-        MiniSatRnd mtrand; ///< random number generator
+        MTRand mtrand; ///< random number generator
 
 
         vector<lbool>  model;
-        vector<lbool>  full_model;
+        vector<Lit>    decisions_reaching_model; // the decisions needed to reach current model
+        bool           decisions_reaching_model_valid = false;
         vector<Lit>   conflict;     ///<If problem is unsatisfiable (possibly under assumptions), this vector represent the final conflict clause expressed in the assumptions.
         template<bool update_bogoprops>
         PropBy propagate();
@@ -106,21 +109,44 @@ class Searcher : public HyperEngine
         std::pair<size_t, size_t> remove_useless_bins(bool except_marked = false);
         bool var_inside_assumptions(const uint32_t var) const
         {
+            #ifdef SLOW_DEBUG
+            assert(var < nVars());
+            assert(var < assumptionsSet.size());
+            #endif
             return assumptionsSet.at(var);
         }
         template<bool do_insert_var_order = true, bool update_bogoprops = false>
         void cancelUntil(uint32_t level); ///<Backtrack until a certain level.
         bool check_order_heap_sanity() const;
 
-        //Gauss
-        vector<Gaussian*> gauss_matrixes;
         SQLStats* sqlStats = NULL;
-        void consolidate_watches();
+        void consolidate_watches(const bool full);
+
+        //Gauss
         #ifdef USE_GAUSS
-        void clear_gauss();
-        #else
-        void clear_gauss() {}
+        void clearEnGaussMatrixes();  //  clear Gaussian matrixes
+        llbool Gauss_elimination(); // gaussian elimination in DPLL
+        vector<EGaussian*> gmatrixes;   // enhance gaussian matrix
+        vector<GaussQData> gqueuedata;
+
+        uint32_t sum_gauss_called;
+        uint32_t sum_gauss_confl;
+        uint32_t sum_gauss_prop;
+        uint32_t sum_gauss_unit_truths;
+        uint32_t get_sum_gauss_called() const;
+        uint32_t get_sum_gauss_confl() const;
+        uint32_t get_sum_gauss_prop() const;
+        uint32_t get_sum_gauss_unit_truths() const;
         #endif
+
+        // stats
+        uint32_t sum_initEnGauss;      // the total sum of time calling "full_init"
+        uint32_t sum_initUnit;           // the total sum of number getting unit  xor clasue in  initial gaussian matrix
+        uint32_t sum_initTwo;           // the total sum of number getting two-variable xor clasue in  initial gaussian matrix
+        uint32_t sum_Enconflict;        // the total sum of conflict in gaussian matrix
+        uint32_t sum_Enpropagate;    // the total sum of propagation in gaussian matrx
+        uint32_t sum_Enunit;            // the total sum of number getting two-variable xor clasue in  gaussian matrix
+        uint32_t sum_EnGauss;        // the total sum of time entering gaussian matrix
 
         void testing_fill_assumptions_set()
         {
@@ -139,7 +165,8 @@ class Searcher : public HyperEngine
             order_heap_vsids.clear();
             order_heap_maple.clear();
         }
-        void bumpClauseAct(Clause* cl);
+        template<bool update_bogoprops>
+        void bump_cl_act(Clause* cl);
         void simple_create_learnt_clause(
             PropBy confl,
             vector<Lit>& out_learnt,
@@ -227,14 +254,16 @@ class Searcher : public HyperEngine
         /// Search for a given number of conflicts.
         template<bool update_bogoprops>
         lbool search();
-        lbool burst_search();
         template<bool update_bogoprops>
         bool  handle_conflict(PropBy confl);// Handles the conflict clause
         void  update_history_stats(size_t backtrack_level, uint32_t glue);
+        template<bool update_bogoprops>
         void  attach_and_enqueue_learnt_clause(Clause* cl, bool enq = true);
         void  print_learning_debug_info() const;
         void  print_learnt_clause() const;
+        template<bool update_bogoprops>
         void  add_otf_subsume_long_clauses();
+        template<bool update_bogoprops>
         void  add_otf_subsume_implicit_clause();
         Clause* handle_last_confl_otf_subsumption(
             Clause* cl
@@ -264,7 +293,6 @@ class Searcher : public HyperEngine
             bool needToStopSearch;
             uint64_t conflictsDoneThisRestart;
             uint64_t max_confl_to_do;
-            unsigned backtrack_num = 0;
             Restart rest_type = Restart::never;
         };
         SearchParams params;
@@ -295,19 +323,6 @@ class Searcher : public HyperEngine
         #endif
 
         vector<uint32_t> implied_by_learnts; //for glue-based extra var activity bumping
-
-        /////////////////
-        //Graphical conflict generation
-        void   create_graphviz_confl_graph     (PropBy conflPart);
-        string analyze_confl_for_graphviz_graph (PropBy conflHalf, uint32_t& out_btlevel, uint32_t &glue);
-        void print_edges_for_graphviz_file(std::ofstream& file) const;
-        void print_vertex_definitions_for_graphviz_file(std::ofstream& file);
-        void fill_seen_for_lits_connected_to_conflict_graph(
-            vector<Lit>& lits
-        );
-        vector<Lit> get_lits_from_conflict(const PropBy conflPart);
-
-
 
         /////////////////
         // Variable activity
@@ -356,7 +371,6 @@ class Searcher : public HyperEngine
         uint64_t max_confl_per_search_solve_call;
         bool blocked_restart = false;
         void check_blocking_restart();
-        void check_blocking_restart_backtrack();
         uint32_t num_search_called = 0;
         uint64_t lastRestartConfl;
         double luby(double y, int x);
@@ -383,6 +397,13 @@ class Searcher : public HyperEngine
         };
         friend class Gaussian;
         friend class DistillerLong;
+        #ifdef CMS_TESTING_ENABLED
+        FRIEND_TEST(SearcherTest, pickpolar_rnd);
+        FRIEND_TEST(SearcherTest, pickpolar_pos);
+        FRIEND_TEST(SearcherTest, pickpolar_neg);
+        FRIEND_TEST(SearcherTest, pickpolar_auto);
+        FRIEND_TEST(SearcherTest, pickpolar_auto_not_changed_by_simp);
+        #endif
 
         ///Decay all variables with the specified factor. Implemented by increasing the 'bump' value instead.
         void     varDecayActivity ();
@@ -392,7 +413,8 @@ class Searcher : public HyperEngine
 
         //Clause activites
         double cla_inc;
-        void decayClauseAct();
+
+        template<bool update_bogoprops> void decayClauseAct();
         unsigned guess_clause_array(
             const ClauseStats& glue
             , const uint32_t backtrack_lev
@@ -408,6 +430,7 @@ class Searcher : public HyperEngine
             const uint32_t glue
             , const uint32_t old_decision_level
         );
+        int dump_this_many_cldata_in_stream = 0;
         #endif
 
 
@@ -417,7 +440,7 @@ class Searcher : public HyperEngine
         bool DISTANCE = true;
 
         //Picking polarity when doing decision
-        bool     pickPolarity(const uint32_t var);
+        bool     pick_polarity(const uint32_t var);
 
         //Last time we clean()-ed the clauses, the number of zero-depth assigns was this many
         size_t   lastCleanZeroDepthAssigns;
@@ -483,57 +506,44 @@ inline void Searcher::insert_var_order_all(const uint32_t x)
     }
 }
 
-inline void Searcher::bumpClauseAct(Clause* cl)
+template<bool update_bogoprops>
+inline void Searcher::bump_cl_act(Clause* cl)
 {
+    if (update_bogoprops)
+        return;
+
     assert(!cl->getRemoved());
 
     double new_val = cla_inc + (double)cl->stats.activity;
     cl->stats.activity = (float)new_val;
     if (cl->stats.activity > 1e20F ) {
-        // Rescale
+        // Rescale. For STATS_NEEDED we rescale ALL
+        #ifndef STATS_NEEDED
         for(ClOffset offs: longRedCls[2]) {
             cl_alloc.ptr(offs)->stats.activity *= static_cast<float>(1e-20);
         }
+        #else
+        for(auto& lrcs: longRedCls) {
+            for(ClOffset offs: lrcs) {
+                cl_alloc.ptr(offs)->stats.activity *= static_cast<float>(1e-20);
+            }
+        }
+        #endif
         cla_inc *= 1e-20;
         assert(cla_inc != 0);
     }
 }
 
+template<bool update_bogoprops>
 inline void Searcher::decayClauseAct()
 {
+    if (update_bogoprops)
+        return;
+
     cla_inc *= (1 / conf.clause_decay);
 }
 
-inline bool Searcher::check_order_heap_sanity() const
-{
-    for(size_t i = 0; i < nVars(); i++)
-    {
-        if (varData[i].removed == Removed::none
-            && value(i) == l_Undef)
-        {
-            if (!order_heap_vsids.inHeap(i)) {
-                cout << "ERROR var " << i+1 << " not in VSIDS heap."
-                << " value: " << value(i)
-                << " removed: " << removed_type_to_string(varData[i].removed)
-                << endl;
-                return false;
-            }
-            if (!order_heap_maple.inHeap(i)) {
-                cout << "ERROR var " << i+1 << " not in !VSIDS heap."
-                << " value: " << value(i)
-                << " removed: " << removed_type_to_string(varData[i].removed)
-                << endl;
-                return false;
-            }
-        }
-    }
-    assert(order_heap_vsids.heap_property());
-    assert(order_heap_maple.heap_property());
-
-    return true;
-}
-
-inline bool Searcher::pickPolarity(const uint32_t var)
+inline bool Searcher::pick_polarity(const uint32_t var)
 {
     switch(conf.polarity_mode) {
         case PolarityMode::polarmode_neg:
@@ -602,6 +612,29 @@ inline void Searcher::bump_vsids_var_act(uint32_t var, double mult)
     }
     #endif
 }
+
+#ifdef USE_GAUSS
+inline uint32_t Searcher::get_sum_gauss_unit_truths() const
+{
+    return sum_gauss_unit_truths;
+}
+
+inline uint32_t Searcher::get_sum_gauss_called() const
+{
+    return sum_gauss_called;
+}
+
+inline uint32_t Searcher::get_sum_gauss_confl() const
+{
+    return sum_gauss_confl;
+}
+
+inline uint32_t Searcher::get_sum_gauss_prop() const
+{
+    return sum_gauss_prop;
+}
+#endif
+
 
 
 } //end namespace

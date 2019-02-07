@@ -49,7 +49,7 @@ bool InTree::replace_until_fixedpoint(bool& aborted)
     uint64_t bogoprops = 0;
     uint32_t last_replace = std::numeric_limits<uint32_t>::max();
     uint32_t this_replace = solver->varReplacer->get_num_replaced_vars();
-    while(last_replace != this_replace) {
+    while(last_replace != this_replace && !aborted) {
         last_replace = this_replace;
         solver->clauseCleaner->remove_and_clean_all();
         bool OK = solver->varReplacer->replace_if_enough_is_found(0, &bogoprops);
@@ -59,13 +59,13 @@ bool InTree::replace_until_fixedpoint(bool& aborted)
 
         if (solver->varReplacer->get_scc_depth_warning_triggered()) {
             aborted = true;
-            solver->okay();
+            return solver->okay();
         }
         this_replace = solver->varReplacer->get_num_replaced_vars();
 
         if (bogoprops > time_limit) {
             aborted = true;
-            solver->okay();
+            return solver->okay();
         }
     }
 
@@ -94,7 +94,7 @@ bool InTree::check_timeout_due_to_hyperbin()
     ) {
         if (solver->conf.verbosity) {
             cout
-            << "c [intree] intra-propagation timout,"
+            << "c [intree] intra-propagation timeout,"
             << " turning off OTF hyper-bin&trans-red"
             << endl;
         }
@@ -383,14 +383,30 @@ bool InTree::empty_failed_list()
 
         if (solver->value(lit) == l_Undef) {
             solver->enqueue(lit);
-            *(solver->drat) << add << lit << fin;
+            *(solver->drat) << add << lit
+            #ifdef STATS_NEEDED
+            << solver->clauseID++
+            << solver->sumConflicts
+            #endif
+            << fin;
             solver->ok = solver->propagate<true>().isNULL();
             if (!solver->ok) {
                 return false;
             }
         } else if (solver->value(lit) == l_False) {
-            *(solver->drat) << add << ~lit << fin;
-            *(solver->drat) << add << fin;
+            *(solver->drat) << add << ~lit
+            #ifdef STATS_NEEDED
+            << solver->clauseID++
+            << solver->sumConflicts
+            #endif
+            << fin;
+
+            *(solver->drat) << add
+            #ifdef STATS_NEEDED
+            << solver->clauseID++
+            << solver->sumConflicts
+            #endif
+            << fin;
             solver->ok = false;
             return false;
         }

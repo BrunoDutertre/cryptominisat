@@ -28,6 +28,8 @@ THE SOFTWARE.
 #include <iostream>
 #include <algorithm>
 #include <set>
+#include <limits>
+#include "constants.h"
 #include "xor.h"
 #include "cset.h"
 #include "watcharray.h"
@@ -53,7 +55,7 @@ class PossibleXor
             const vector<Lit>& cl
             , const ClOffset offset
             , cl_abst_type _abst
-            , vector<uint16_t>& seen
+            , vector<uint32_t>& seen
         ) {
             abst = _abst;
             size = cl.size();
@@ -62,7 +64,8 @@ class PossibleXor
             cout << "Trying to create XOR from clause: " << cl << endl;
             #endif
 
-            assert(cl.size() <= sizeof(origCl)/sizeof(Lit));
+            assert(cl.size() <= sizeof(origCl)/sizeof(Lit)
+            && "The XOR being recovered is larger than MAX_XOR_RECOVER_SIZE");
             for(size_t i = 0; i < size; i++) {
                 origCl[i] = cl[i];
                 if (i > 0)
@@ -71,6 +74,13 @@ class PossibleXor
             setup_seen_rhs_foundcomb(seen);
             if (offset != std::numeric_limits<ClOffset>::max()) {
                 offsets.push_back(offset);
+            }
+        }
+
+        void clear_seen(vector<uint32_t>& seen)
+        {
+            for (uint32_t i = 0; i < size; i++) {
+                seen[origCl[i].var()] = 0;
             }
         }
 
@@ -90,7 +100,7 @@ class PossibleXor
         }
 
     private:
-        void setup_seen_rhs_foundcomb(vector<uint16_t>& seen)
+        void setup_seen_rhs_foundcomb(vector<uint32_t>& seen)
         {
             //Calculate parameters of base clause.
             //Also set 'seen' for easy check in 'findXorMatch()'
@@ -120,8 +130,8 @@ class PossibleXor
         // 1 0 0
         // 0 1 0
         // 0 0 1
-        vector<bool> foundComb;
-        Lit origCl[7];
+        vector<char> foundComb;
+        Lit origCl[MAX_XOR_RECOVER_SIZE];
         cl_abst_type abst;
         uint32_t size;
         bool rhs;
@@ -143,7 +153,7 @@ public:
         }
 
         Stats& operator+=(const Stats& other);
-        void print_short(const Solver* solver) const;
+        void print_short(const Solver* solver, const double time_remain) const;
         void print() const;
 
         //Time
@@ -154,17 +164,21 @@ public:
         //XOR stats
         uint64_t foundXors = 0;
         uint64_t sumSizeXors = 0;
+        uint32_t minsize = std::numeric_limits<uint32_t>::max();
+        uint32_t maxsize = std::numeric_limits<uint32_t>::min();
     };
 
     const Stats& get_stats() const;
-    virtual size_t mem_used() const;
-    void add_xors_to_gauss();
-    void clean_up_xors();
-    void xor_together_xors();
-    bool add_new_truths_from_xors();
+    size_t mem_used() const;
+    void free_mem();
+    void grab_mem();
+    void add_xors_to_solver();
+    vector<Xor> remove_xors_without_connecting_vars(const vector<Xor>& this_xors);
+    bool xor_together_xors(vector<Xor>& xors);
+    bool add_new_truths_from_xors(vector<Xor>& xors, vector<Lit>* out_changed_occur = NULL);
+    void clean_equivalent_xors(vector<Xor>& txors);
 
     vector<Xor> xors;
-    vector<ClOffset> cls_of_xors;
 
 private:
     PossibleXor poss_xor;
@@ -172,7 +186,7 @@ private:
     void find_xors_based_on_long_clauses();
     void print_found_xors();
     bool xor_has_interesting_var(const Xor& x);
-    vector<uint32_t> xor_two(Xor& x1, Xor& x2);
+    vector<uint32_t> xor_two(Xor& x1, Xor& x2, uint32_t& clash_num);
     void clean_xors_from_empty();
 
     int64_t xor_find_time_limit;
@@ -181,7 +195,7 @@ private:
     void findXor(vector<Lit>& lits, const ClOffset offset, cl_abst_type abst);
 
     ///Normal finding of matching clause for XOR
-    void findXorMatch(watch_subarray_const occ);
+    void findXorMatch(watch_subarray_const occ, const Lit wlit);
 
     OccSimplifier* occsimplifier;
     Solver *solver;
@@ -193,9 +207,10 @@ private:
     //Temporary
     vector<Lit> tmpClause;
     vector<uint32_t> varsMissing;
+    vector<Lit> binvec;
 
     //Other temporaries
-    vector<uint16_t>& seen;
+    vector<uint32_t> occcnt;
     vector<Lit>& toClear;
     vector<uint32_t> interesting;
 };
@@ -265,7 +280,10 @@ template<class T> void PossibleXor::add(
             origI++;
             assert(origI < size && "cl must be sorted");
         }
-        whichOne += ((uint32_t)l->sign()) << origI;
+        if (i > 0) {
+            assert(cl[i-1] < cl[i] && "Must be sorted");
+        }
+        whichOne |= ((uint32_t)l->sign()) << origI;
     }
 
     //if vars are missing from the end

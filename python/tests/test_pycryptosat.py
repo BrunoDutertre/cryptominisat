@@ -22,12 +22,17 @@
 
 from __future__ import unicode_literals
 from __future__ import print_function
+from array import array as _array
 import sys
 import unittest
 
 
 import pycryptosat
 from pycryptosat import Solver
+
+
+def array(typecode, initializer=()):
+    return _array(str(typecode), initializer)
 
 
 def check_clause(clause, solution):
@@ -144,6 +149,34 @@ class InitTester(unittest.TestCase):
         self.assertRaises(TypeError, Solver, confl_limit="fail")
 
 
+class TestDump(unittest.TestCase):
+
+    def setUp(self):
+        self.solver = Solver()
+
+    def test_max_glue_missing(self):
+        self.assertRaises(TypeError,
+                          self.solver.start_getting_small_clauses, 4)
+
+    def test_one_dump(self):
+        with open("tests/test.cnf", "r") as x:
+            for line in x:
+                line = line.strip()
+                if "p" in line or "c" in line:
+                    continue
+
+                out = [int(x) for x in line.split()[:-1]]
+                self.solver.add_clause(out)
+
+        res, _ = self.solver.solve()
+        self.assertEqual(res, True)
+
+        self.solver.start_getting_small_clauses(4, max_glue=10)
+        x = self.solver.get_next_small_clause()
+        self.assertNotEquals(x, None)
+        self.solver.end_getting_small_clauses()
+
+
 class TestSolve(unittest.TestCase):
 
     def setUp(self):
@@ -169,6 +202,30 @@ class TestSolve(unittest.TestCase):
         res, solution = self.solver.solve()
         self.assertEqual(res, True)
         self.assertTrue(check_solution(clauses1, solution))
+
+    def test_add_clauses(self):
+        self.solver.add_clauses([[1], [-1]])
+        res, solution = self.solver.solve()
+        self.assertEqual(res, False)
+
+    def test_add_clauses_wrong_zero(self):
+        self.assertRaises(TypeError, self.solver.add_clause, [[1, 0], [-1]])
+
+    def test_add_clauses_array_SAT(self):
+        cls = array('i', [1, 2, 0, 1, 2, 0])
+        self.solver.add_clauses(cls)
+        res, solution = self.solver.solve()
+        self.assertEqual(res, True)
+
+    def test_add_clauses_array_UNSAT(self):
+        cls = array('i', [-1, 0, 1, 0])
+        self.solver.add_clauses(cls)
+        res, solution = self.solver.solve()
+        self.assertEqual(res, False)
+
+    def test_add_clauses_array_unterminated(self):
+        cls = array('i', [1, 2, 0, 1, 2])
+        self.assertRaises(ValueError, self.solver.add_clause, cls)
 
     def test_bad_iter(self):
         class Liar:
@@ -223,9 +280,22 @@ def run():
     suite.addTest(unittest.makeSuite(TestXor))
     suite.addTest(unittest.makeSuite(InitTester))
     suite.addTest(unittest.makeSuite(TestSolve))
+    suite.addTest(unittest.makeSuite(TestDump))
 
     runner = unittest.TextTestRunner(verbosity=2)
-    return runner.run(suite)
+    result = runner.run(suite)
+
+    n_errors = len(result.errors)
+    n_failures = len(result.failures)
+
+    if n_errors or n_failures:
+        print('\n\nSummary: %d errors and %d failures reported\n'%\
+            (n_errors, n_failures))
+
+    print()
+
+    sys.exit(n_errors+n_failures)
+
 
 if __name__ == '__main__':
     run()

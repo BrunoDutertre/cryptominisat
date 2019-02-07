@@ -57,6 +57,7 @@ void SolutionExtender::extend()
         ) {
             //any setting would work, let's set to l_False (MiniSat default)
             solver->model[i] = l_False;
+            solver->decisions_reaching_model.push_back(Lit(i, true));
         }
     }
 
@@ -92,15 +93,14 @@ void SolutionExtender::dummyBlocked(const uint32_t blockedOn)
     if (solver->model_value(blockedOn) != l_Undef)
         return;
 
+    //Picking l_False because MiniSat likes False solutions. Could pick anything.
+    solver->model[blockedOn] = l_False;
+    solver->decisions_reaching_model.push_back(Lit(blockedOn, true));
 
     //If var is replacing something else, it MUST be set.
     if (solver->varReplacer->var_is_replacing(blockedOn)) {
-        //Picking l_False because MiniSat likes False solutions. Could pick anything.
-        solver->model[blockedOn] = l_False;
         solver->varReplacer->extend_model(blockedOn);
     }
-
-    solver->model[blockedOn] = l_False;
 }
 
 bool SolutionExtender::addClause(const vector<Lit>& lits, const uint32_t blockedOn)
@@ -172,15 +172,31 @@ bool SolutionExtender::addClause(const vector<Lit>& lits, const uint32_t blocked
         }
     }
     assert(solver->model_value(blockedOn) == l_Undef);
+
+    //satisfy this one clause
     Lit actual_lit = lit_Undef;
+    bool all_values_false = true;
     for(Lit l: lits) {
+        lbool model_value = solver-> model_value(l);
+        assert(model_value != l_True);
         if (l.var() == blockedOn) {
             actual_lit = l;
-            break;
+        } else {
+            if (model_value == l_Undef) {
+                all_values_false = false;
+            }
         }
     }
     assert(actual_lit != lit_Undef);
-    solver->model[blockedOn] = actual_lit.sign() ? l_False : l_True;
+    lbool val = actual_lit.sign() ? l_False : l_True;
+    solver->model[blockedOn] = val;
+    if (!all_values_false) {
+        solver->decisions_reaching_model.push_back(Lit(blockedOn, val == l_False));
+        //cout << "Adding dec addClause: " << Lit(blockedOn, val == l_False) << endl;
+    } else {
+        //cout << "Would be forced anyway" << endl;
+    }
+
     if (solver->conf.verbosity >= 10) {
         cout << "Extending VELIM cls. -- setting model for var "
         << blockedOn + 1 << " to " << solver->model[blockedOn] << endl;

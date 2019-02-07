@@ -62,6 +62,10 @@ class ClauseAllocator {
             , const int64_t ID
             #endif
         ) {
+            if (ps.size() > (0x01UL << 28)) {
+                throw CMSat::TooLongClauseError();
+            }
+
             void* mem = allocEnough(ps.size());
             Clause* real = new (mem) Clause(ps, conflictNum
             #ifdef STATS_NEEDED
@@ -85,6 +89,7 @@ class ClauseAllocator {
         void consolidate(
             Solver* solver
             , const bool force = false
+            , bool lower_verb = false
         );
 
         size_t mem_used() const;

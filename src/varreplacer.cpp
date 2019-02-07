@@ -181,7 +181,7 @@ bool VarReplacer::enqueueDelayedEnqueue()
         return false;
 
     solver->ok = solver->propagate<false>().isNULL();
-    return solver->ok;
+    return solver->okay();
 }
 
 void VarReplacer::attach_delayed_attach()
@@ -222,7 +222,9 @@ bool VarReplacer::perform_replace()
     const size_t origTrailSize = solver->trail_size();
 
     solver->clauseCleaner->remove_and_clean_all();
+    #ifdef DEBUG_ATTACH_MORE
     solver->test_all_clause_attached();
+    #endif
 
     //Printing stats
     if (solver->conf.verbosity >= 5)
@@ -234,7 +236,9 @@ bool VarReplacer::perform_replace()
     runStats.actuallyReplacedVars = replacedVars -lastReplacedVars;
     lastReplacedVars = replacedVars;
 
+    #ifdef DEBUG_ATTACH_MORE
     solver->test_all_clause_attached();
+    #endif
     assert(solver->prop_at_head());
 
     #ifdef DEBUG_IMPLICIT_STATS
@@ -260,6 +264,9 @@ bool VarReplacer::perform_replace()
     }
     solver->clean_occur_from_removed_clauses_only_smudged();
     attach_delayed_attach();
+    if (!replace_xor_clauses()) {
+        goto end;
+    }
 
     //While replacing the clauses
     //we cannot(for implicits) and/or shouldn't (for implicit & long cls) enqueue
@@ -283,7 +290,7 @@ end:
     globalStats += runStats;
     if (solver->conf.verbosity) {
         if (solver->conf.verbosity  >= 3)
-            runStats.print(solver->nVars());
+            runStats.print(solver->nVarsOuter());
         else
             runStats.print_short(solver);
     }
@@ -296,7 +303,9 @@ end:
     }
 
     if (solver->okay()) {
+        #ifdef DEBUG_ATTACH_MORE
         solver->test_all_clause_attached();
+        #endif
         solver->check_wrong_attach();
         #ifdef DEBUG_IMPLICIT_STATS
         solver->check_stats();
@@ -304,7 +313,30 @@ end:
         checkUnsetSanity();
     }
 
-    return solver->ok;
+    return solver->okay();
+}
+
+bool VarReplacer::replace_xor_clauses()
+{
+    for(Xor& x: solver->xorclauses) {
+        for(uint32_t i = 0, end = x.size(); i < end; i++) {
+            assert(x[i] < solver->nVars());
+            Lit l = Lit(x[i], false);
+            if (get_lit_replaced_with_fast(l) != l) {
+                l = get_lit_replaced_with_fast(l);
+                x.rhs ^= l.sign();
+                x[i] = l.var();
+                runStats.replacedLits++;
+            }
+        }
+
+        solver->clean_xor_vars_no_prop(x.get_vars(), x.rhs);
+        if (x.size() == 0 && x.rhs == true) {
+            solver->ok = false;
+        }
+    }
+
+    return solver->okay();
 }
 
 void VarReplacer::newBinClause(
@@ -320,7 +352,12 @@ void VarReplacer::newBinClause(
         && origLit2 < origLit3
     ){
         delayed_attach_bin.push_back(BinaryClause(lit1, lit2, red));
-        (*solver->drat) << add << lit1 << lit2 << fin;
+        (*solver->drat) << add << lit1 << lit2
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin;
     }
 }
 
@@ -337,7 +374,12 @@ inline void VarReplacer::updateBin(
     //Two lits are the same in BIN
     if (lit1 == lit2) {
         delayedEnqueue.push_back(lit2);
-        (*solver->drat) << add << lit2 << fin;
+        (*solver->drat) << add << lit2
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin;
         remove = true;
     }
 
@@ -364,7 +406,12 @@ inline void VarReplacer::updateBin(
         && (origLit1 < origLit2)
     ) {
         (*solver->drat)
-        << add << lit1 << lit2 << fin
+        << add << lit1 << lit2
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin
         << del << origLit1 << origLit2 << fin;
     }
 
@@ -461,7 +508,7 @@ bool VarReplacer::replaceImplicit()
     updateStatsFromImplStats();
     solver->watches.clear_smudged();
 
-    return solver->ok;
+    return solver->okay();
 }
 
 /**
@@ -508,7 +555,7 @@ bool VarReplacer::replace_set(vector<ClOffset>& cs)
     cs.resize(cs.size() - (i-j));
     assert(!solver->drat->something_delayed());
 
-    return solver->ok;
+    return solver->okay();
 }
 
 Lit* my_lit_find(Clause& cl, const Lit lit)
@@ -567,7 +614,11 @@ bool VarReplacer::handleUpdatedClause(
         c.setRemoved();
         return true;
     }
-    (*solver->drat) << add << c << fin << findelay;
+    (*solver->drat) << add << c
+    #ifdef STATS_NEEDED
+    << solver->sumConflicts
+    #endif
+    << fin << findelay;
 
     runStats.bogoprops += 3;
     switch(c.size()) {
@@ -702,10 +753,33 @@ bool VarReplacer::handleAlreadyReplaced(const Lit lit1, const Lit lit2)
     //OOps, already inside, but with inverse polarity, UNSAT
     if (lit1.sign() != lit2.sign()) {
         (*solver->drat)
-        << add << ~lit1 << lit2 << fin
-        << add << lit1 << ~lit2 << fin
-        << add << lit1 << fin
-        << add << ~lit1 << fin;
+        << add << ~lit1 << lit2
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin
+
+        << add << lit1 << ~lit2
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin
+
+        << add << lit1
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin
+
+        << add << ~lit1
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin;
 
         solver->ok = false;
         return false;
@@ -723,14 +797,25 @@ bool VarReplacer::replace_vars_already_set(
 ) {
     if (val1 != val2) {
         (*solver->drat)
-        << add << ~lit1 << fin
-        << add << lit1 << fin;
+        << add << ~lit1
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin
+
+        << add << lit1
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin;
 
         solver->ok = false;
     }
 
     //Already set, return with correct code
-    return solver->ok;
+    return solver->okay();
 }
 
 bool VarReplacer::handleOneSet(
@@ -747,7 +832,12 @@ bool VarReplacer::handleOneSet(
             toEnqueue = lit1 ^ (val2 == l_False);
         }
         solver->enqueue(toEnqueue);
-        (*solver->drat) << add << toEnqueue << fin;
+        (*solver->drat) << add << toEnqueue
+        #ifdef STATS_NEEDED
+        << solver->clauseID++
+        << solver->sumConflicts
+        #endif
+        << fin;
 
         #ifdef STATS_NEEDED
         solver->propStats.propsUnit++;
@@ -755,7 +845,7 @@ bool VarReplacer::handleOneSet(
 
         solver->ok = (solver->propagate<false>().isNULL());
     }
-    return solver->ok;
+    return solver->okay();
 }
 
 /**
@@ -792,8 +882,18 @@ bool VarReplacer::replace(
         return handleAlreadyReplaced(lit1, lit2);
     }
     (*solver->drat)
-    << add << ~lit1 << lit2 << fin
-    << add << lit1 << ~lit2 << fin;
+    << add << ~lit1 << lit2
+    #ifdef STATS_NEEDED
+    << solver->clauseID++
+    << solver->sumConflicts
+    #endif
+    << fin
+    << add << lit1 << ~lit2
+    #ifdef STATS_NEEDED
+    << solver->clauseID++
+    << solver->sumConflicts
+    #endif
+    << fin;
 
     //None should be removed, only maybe queued for replacement
     assert(solver->varData[lit1.var()].removed == Removed::none);
@@ -911,16 +1011,23 @@ bool VarReplacer::add_xor_as_bins(const BinaryXor& bin_xor)
     return true;
 }
 
-bool VarReplacer::replace_if_enough_is_found(const size_t limit, uint64_t* bogoprops_given)
+bool VarReplacer::replace_if_enough_is_found(const size_t limit, uint64_t* bogoprops_given, bool *replaced)
 {
-    solver->xorclauses.clear();
-    solver->clear_gauss();
+    if (replaced)
+        *replaced = false;
 
     scc_finder->performSCC(bogoprops_given);
     if (scc_finder->get_num_binxors_found() < limit) {
         scc_finder->clear_binxors();
         return solver->okay();
     }
+
+    #ifdef USE_GAUSS
+    solver->clearEnGaussMatrixes();
+    #endif
+
+    if (replaced)
+        *replaced = true;
 
     const set<BinaryXor>& xors_found = scc_finder->get_binxors();
     for(BinaryXor bin_xor: xors_found) {
@@ -1078,7 +1185,7 @@ void VarReplacer::Stats::print(const size_t nVars) const
         cout << "c --------- VAR REPLACE STATS END ----------" << endl;
 }
 
-void VarReplacer::Stats::print_short(const Solver* solver) const
+void VarReplacer::Stats::print_short(const Solver* s) const
 {
     cout
     << "c [vrep]"
@@ -1087,7 +1194,7 @@ void VarReplacer::Stats::print_short(const Solver* solver) const
     << " rem-bin-cls " << removedBinClauses
     << " rem-long-cls " << removedLongClauses
     << " BP " << bogoprops/(1000*1000) << "M"
-    << solver->conf.print_times(cpu_time)
+    << s->conf.print_times(cpu_time)
     << endl;
 }
 

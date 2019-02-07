@@ -224,7 +224,7 @@ public:
     size_t mem_used_xor() const;
     size_t mem_used_bva() const;
     void print_gatefinder_stats() const;
-    void dump_blocked_clauses(std::ostream* outfile) const;
+    uint32_t dump_blocked_clauses(std::ostream* outfile) const;
 
     //UnElimination
     void print_blocked_clauses_reverse() const;
@@ -263,6 +263,7 @@ public:
     void check_clid_correct() const;
     bool getAnythingHasBeenBlocked() const;
     void freeXorMem();
+    void sort_occurs_and_set_abst();
     void save_state(SimpleOutFile& f);
     void load_state(SimpleInFile& f);
     vector<ClOffset> added_long_cl;
@@ -297,6 +298,7 @@ private:
     vector<uint16_t>& seen;
     vector<uint8_t>& seen2;
     vector<Lit>& toClear;
+    vector<bool> indep_vars;
 
     //Temporaries
     vector<Lit>     dummy;       ///<Used by merge()
@@ -309,6 +311,7 @@ private:
     int64_t  empty_varelim_time_limit;
     int64_t  varelim_num_limit;
     int64_t  varelim_sub_str_limit;
+    int64_t  varelim_linkin_limit_bytes;
     int64_t* limit_to_decrease;
 
     //Start-up
@@ -384,7 +387,7 @@ private:
     ///Order variables according to their complexity of elimination
     struct VarOrderLt {
         const vector<uint64_t>&  varElimComplexity;
-        bool operator () (const size_t x, const size_t y) const
+        bool operator () (const uint64_t x, const uint64_t y) const
         {
             return varElimComplexity[x] < varElimComplexity[y];
         }
@@ -419,33 +422,51 @@ private:
     void        mark_gate_in_poss_negs(Lit elim_lit, watch_subarray_const poss, watch_subarray_const negs);
     void        find_gate(Lit elim_lit, watch_subarray_const a, watch_subarray_const b);
     void        print_var_eliminate_stat(Lit lit) const;
-    bool        add_varelim_resolvent(vector<Lit>& finalLits, const ClauseStats& stats);
+    bool        add_varelim_resolvent(vector<Lit>& finalLits, const ClauseStats& stats, bool is_xor);
     void        update_varelim_complexity_heap();
     void        print_var_elim_complexity_stats(const uint32_t var) const;
+
+    struct ResolventData {
+        ResolventData()
+        {}
+
+        ResolventData(const ClauseStats& cls, const bool _is_xor) :
+            stats(cls),
+            is_xor(_is_xor)
+        {}
+
+        ClauseStats stats;
+        bool is_xor;
+    };
+
     struct Resolvents {
         uint32_t at = 0;
         vector<vector<Lit>> resolvents_lits;
-        vector<ClauseStats> resolvents_stats;
+        vector<ResolventData> resolvents_stats;
         void clear() {
             at = 0;
         }
-        void add_resolvent(const vector<Lit>& res, const ClauseStats& stats) {
+        void add_resolvent(const vector<Lit>& res, const ClauseStats& stats, bool is_xor) {
             if (resolvents_lits.size() < at+1) {
                 resolvents_lits.resize(at+1);
                 resolvents_stats.resize(at+1);
             }
 
             resolvents_lits[at] = res;
-            resolvents_stats[at] = stats;
+            resolvents_stats[at] = ResolventData(stats, is_xor);
             at++;
         }
         vector<Lit>& back_lits() {
             assert(at > 0);
             return resolvents_lits[at-1];
         }
-        const ClauseStats& back_stats() {
+        const ClauseStats& back_stats() const {
             assert(at > 0);
-            return resolvents_stats[at-1];
+            return resolvents_stats[at-1].stats;
+        }
+        bool back_xor() const {
+            assert(at > 0);
+            return resolvents_stats[at-1].is_xor;
         }
         void pop() {
             at--;

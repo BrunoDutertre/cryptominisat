@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2017  Mate Soos
+# Copyright (C) 2018  Mate Soos
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -18,751 +18,360 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.
 
-from __future__ import print_function
-import sqlite3
-import optparse
-import time
-import pickle
-import re
 import pandas as pd
-import numpy as np
-
-from sklearn.model_selection import train_test_split
+import pickle
+import sklearn
+import sklearn.svm
 import sklearn.tree
 import sklearn.ensemble
+import optparse
+import numpy as np
 import sklearn.metrics
-from sklearn.preprocessing import LabelEncoder
+import time
+import itertools
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+
+class_names = ["throw", "longer"]
+cuts = [-1, 20000, 1000000000000]
+class_names2 = ["middle", "longer2"]
+cuts2 = [-1, 40000, 1000000000000]
+class_names3 = ["middle2", "forever"]
+cuts3 = [-1, 100000, 1000000000000]
 
 
-##############
-# HOW TO GET A NICE LIST
-##############
-# go into .stdout.gz outputs:
-# zgrep "s UNSAT" * | cut -d ":" -f 1 > ../candidate_files_large_fixed_adjust_guess-12-April
-#
-# --> edit file to have the format:
-# zgrep -H "Total" large_hybr-12-April-2016-VAGTY-e4119a1b0-tout-1500-mout-1600/1dlx_c_iq57_a.cnf.gz.stdout.gz
-#
-# run:
-# ./candidate_files_large_hybr-12-April-2016-VAGTY.sh | awk '{if ($5 < 600 && $5 > 200) print $1 " -- " $5}' | cut -d "/" -f 2 | cut -d ":" -f 1 | sed "s/.stdout.*//" > ../unsat_small_candidates2.txt
+def output_to_dot(clf, features, nameextra):
+    fname = options.dot+nameextra
+    sklearn.tree.export_graphviz(clf, out_file=fname,
+                                 feature_names=features,
+                                 class_names=class_names,
+                                 filled=True, rounded=True,
+                                 special_characters=True,
+                                 proportion=True)
+    print("Run dot:")
+    print("dot -Tpng {fname} -o {fname}.png".format(fname=fname))
+    print("gwenview {fname}.png".format(fname=fname))
 
 
-################
-# EXAMPLE TO RUN THIS AGAINST
-################
-# 6s153.cnf.gz
-
-class QueryHelper:
-    def __init__(self, dbfname):
-        self.conn = sqlite3.connect(dbfname)
-        self.c = self.conn.cursor()
-        self.runID = self.find_runID()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.conn.commit()
-        self.conn.close()
-
-    def find_runID(self):
-        q = """
-        SELECT runID
-        FROM startUp
-        order by startTime desc
-        limit 1
-        """
-
-        runID = None
-        for row in self.c.execute(q):
-            if runID is not None:
-                print("ERROR: More than one RUN IDs in file!")
-                exit(-1)
-            runID = int(row[0])
-
-        print("runID: %d" % runID)
-        return runID
+def calc_cross_val():
+    # calculate accuracy/prec/recall for cross-validation
+    accuracy = sklearn.model_selection.cross_val_score(self.clf, X_train, y_train, cv=10)
+    precision = sklearn.model_selection.cross_val_score(self.clf, X_train, y_train, cv=10, scoring='precision')
+    recall = sklearn.model_selection.cross_val_score(self.clf, X_train, y_train, cv=10, scoring='recall')
+    print("cv-accuracy:", accuracy)
+    print("cv-precision:", precision)
+    print("cv-recall:", recall)
+    accuracy = np.mean(accuracy)
+    precision = np.mean(precision)
+    recall = np.mean(recall)
+    print("cv-prec: %-3.4f  cv-recall: %-3.4f cv-accuracy: %-3.4f T: %-3.2f" %
+          (precision, recall, accuracy, (time.time() - t)))
 
 
-class Query2 (QueryHelper):
-    def create_indexes(self):
-        print("Recreating indexes...")
-        t = time.time()
-        q = """
-        drop index if exists `idxclid`;
-        drop index if exists `idxclid2`;
-        drop index if exists `idxclid3`;
-        drop index if exists `idxclid4`;
-        drop index if exists `idxclid5`;
+def plot_confusion_matrix(cm, classes,
+                          normalize=False,
+                          title='Confusion matrix',
+                          cmap=plt.cm.Blues):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
 
-        create index `idxclid` on `clauseStats` (`runID`,`clauseID`);
-        create index `idxclid2` on `clauseStats` (`runID`,`prev_restart`);
-        create index `idxclid3` on `goodClauses` (`runID`,`clauseID`);
-        create index `idxclid4` on `restart` (`runID`, `restarts`);
-        create index `idxclid5` on `tags` (`runID`, `tagname`);
-        """
-        for l in q.split('\n'):
-            self.c.execute(l)
+    print(cm)
 
-        print("indexes created T: %-3.2f s" % (time.time() - t))
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
 
-    def get_clstats(self):
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
 
-        # partially done with tablestruct_sql and SED: sed -e 's/`\(.*\)`.*/restart.`\1` as `rst.\1`/' ../tmp.txt
-        restart_dat = """
-        -- , restart.`runID` as `rst.runID`
-        -- , restart.`simplifications` as `rst.simplifications`
-        -- , restart.`restarts` as `rst.restarts`
-        -- , restart.`conflicts` as `rst.conflicts`
-        -- , restart.`latest_feature_calc` as `restart.latest_feature_calc`
-        -- restart.`runtime` as `rst.runtime`
-        , restart.`numIrredBins` as `rst.numIrredBins`
-        , restart.`numIrredLongs` as `rst.numIrredLongs`
-        , restart.`numRedBins` as `rst.numRedBins`
-        , restart.`numRedLongs` as `rst.numRedLongs`
-        , restart.`numIrredLits` as `rst.numIrredLits`
-        , restart.`numredLits` as `rst.numredLits`
-        , restart.`glue` as `rst.glue`
-        , restart.`glueSD` as `rst.glueSD`
-        , restart.`glueMin` as `rst.glueMin`
-        , restart.`glueMax` as `rst.glueMax`
-        , restart.`size` as `rst.size`
-        , restart.`sizeSD` as `rst.sizeSD`
-        , restart.`sizeMin` as `rst.sizeMin`
-        , restart.`sizeMax` as `rst.sizeMax`
-        , restart.`resolutions` as `rst.resolutions`
-        , restart.`resolutionsSD` as `rst.resolutionsSD`
-        , restart.`resolutionsMin` as `rst.resolutionsMin`
-        , restart.`resolutionsMax` as `rst.resolutionsMax`
-        , restart.`branchDepth` as `rst.branchDepth`
-        , restart.`branchDepthSD` as `rst.branchDepthSD`
-        , restart.`branchDepthMin` as `rst.branchDepthMin`
-        , restart.`branchDepthMax` as `rst.branchDepthMax`
-        , restart.`branchDepthDelta` as `rst.branchDepthDelta`
-        , restart.`branchDepthDeltaSD` as `rst.branchDepthDeltaSD`
-        , restart.`branchDepthDeltaMin` as `rst.branchDepthDeltaMin`
-        , restart.`branchDepthDeltaMax` as `rst.branchDepthDeltaMax`
-        , restart.`trailDepth` as `rst.trailDepth`
-        , restart.`trailDepthSD` as `rst.trailDepthSD`
-        , restart.`trailDepthMin` as `rst.trailDepthMin`
-        , restart.`trailDepthMax` as `rst.trailDepthMax`
-        , restart.`trailDepthDelta` as `rst.trailDepthDelta`
-        , restart.`trailDepthDeltaSD` as `rst.trailDepthDeltaSD`
-        , restart.`trailDepthDeltaMin` as `rst.trailDepthDeltaMin`
-        , restart.`trailDepthDeltaMax` as `rst.trailDepthDeltaMax`
-        , restart.`propBinIrred` as `rst.propBinIrred`
-        , restart.`propBinRed` as `rst.propBinRed`
-        , restart.`propLongIrred` as `rst.propLongIrred`
-        , restart.`propLongRed` as `rst.propLongRed`
-        , restart.`conflBinIrred` as `rst.conflBinIrred`
-        , restart.`conflBinRed` as `rst.conflBinRed`
-        , restart.`conflLongIrred` as `rst.conflLongIrred`
-        , restart.`conflLongRed` as `rst.conflLongRed`
-        , restart.`learntUnits` as `rst.learntUnits`
-        , restart.`learntBins` as `rst.learntBins`
-        , restart.`learntLongs` as `rst.learntLongs`
-        , restart.`resolBinIrred` as `rst.resolBinIrred`
-        , restart.`resolBinRed` as `rst.resolBinRed`
-        , restart.`resolLIrred` as `rst.resolLIrred`
-        , restart.`resolLRed` as `rst.resolLRed`
-        -- , restart.`propagations` as `rst.propagations`
-        -- , restart.`decisions` as `rst.decisions`
-        -- , restart.`flipped` as `rst.flipped`
-        -- , restart.`varSetPos` as `rst.varSetPos`
-        -- , restart.`varSetNeg` as `rst.varSetNeg`
-        -- , restart.`free` as `rst.free`
-        -- , restart.`replaced` as `rst.replaced`
-        -- , restart.`eliminated` as `rst.eliminated`
-        -- , restart.`set` as `rst.set`
-        -- , restart.`clauseIDstartInclusive` as `rst.clauseIDstartInclusive`
-        -- , restart.`clauseIDendExclusive` as `rst.clauseIDendExclusive`
-        """
-
-        clause_dat = """
-        -- , clauseStats.`runID` as `cl.runID`
-        -- , clauseStats.`simplifications` as `cl.simplifications`
-        -- , clauseStats.`restarts` as `cl.restarts`
-        -- , clauseStats.`prev_restart` as `cl.prev_restart`
-        -- , clauseStats.`conflicts` as `cl.conflicts`
-        -- , clauseStats.`latest_feature_calc` as `clauseStats.latest_feature_calc`
-        -- , clauseStats.`clauseID` as `cl.clauseID`
-        , clauseStats.`glue` as `cl.glue`
-        , clauseStats.`size` as `cl.size`
-        , clauseStats.`conflicts_this_restart` as `cl.conflicts_this_restart`
-        , clauseStats.`num_overlap_literals` as `cl.num_overlap_literals`
-        , clauseStats.`num_antecedents` as `cl.num_antecedents`
-        , clauseStats.`antecedents_avg_size` as `cl.antecedents_avg_size`
-        , clauseStats.`backtrack_level` as `cl.backtrack_level`
-        , clauseStats.`decision_level` as `cl.decision_level`
-        , clauseStats.`trail_depth_level` as `cl.trail_depth_level`
-        , clauseStats.`atedecents_binIrred` as `cl.atedecents_binIrred`
-        , clauseStats.`atedecents_binRed` as `cl.atedecents_binRed`
-        , clauseStats.`atedecents_longIrred` as `cl.atedecents_longIrred`
-        , clauseStats.`atedecents_longRed` as `cl.atedecents_longRed`
-        , clauseStats.`vsids_vars_avg` as `cl.vsids_vars_avg`
-        , clauseStats.`vsids_vars_var` as `cl.vsids_vars_var`
-        , clauseStats.`vsids_vars_min` as `cl.vsids_vars_min`
-        , clauseStats.`vsids_vars_max` as `cl.vsids_vars_max`
-        , clauseStats.`antecedents_glue_long_reds_avg` as `cl.antecedents_glue_long_reds_avg`
-        , clauseStats.`antecedents_glue_long_reds_var` as `cl.antecedents_glue_long_reds_var`
-        , clauseStats.`antecedents_glue_long_reds_min` as `cl.antecedents_glue_long_reds_min`
-        , clauseStats.`antecedents_glue_long_reds_max` as `cl.antecedents_glue_long_reds_max`
-        , clauseStats.`antecedents_long_red_age_avg` as `cl.antecedents_long_red_age_avg`
-        , clauseStats.`antecedents_long_red_age_var` as `cl.antecedents_long_red_age_var`
-        , clauseStats.`antecedents_long_red_age_min` as `cl.antecedents_long_red_age_min`
-        , clauseStats.`antecedents_long_red_age_max` as `cl.antecedents_long_red_age_max`
-        , clauseStats.`vsids_of_resolving_literals_avg` as `cl.vsids_of_resolving_literals_avg`
-        , clauseStats.`vsids_of_resolving_literals_var` as `cl.vsids_of_resolving_literals_var`
-        , clauseStats.`vsids_of_resolving_literals_min` as `cl.vsids_of_resolving_literals_min`
-        , clauseStats.`vsids_of_resolving_literals_max` as `cl.vsids_of_resolving_literals_max`
-        , clauseStats.`vsids_of_all_incoming_lits_avg` as `cl.vsids_of_all_incoming_lits_avg`
-        , clauseStats.`vsids_of_all_incoming_lits_var` as `cl.vsids_of_all_incoming_lits_var`
-        , clauseStats.`vsids_of_all_incoming_lits_min` as `cl.vsids_of_all_incoming_lits_min`
-        , clauseStats.`vsids_of_all_incoming_lits_max` as `cl.vsids_of_all_incoming_lits_max`
-        , clauseStats.`antecedents_antecedents_vsids_avg` as `cl.antecedents_antecedents_vsids_avg`
-        , clauseStats.`decision_level_hist` as `cl.decision_level_hist`
-        , clauseStats.`backtrack_level_hist` as `cl.backtrack_level_hist`
-        , clauseStats.`trail_depth_level_hist` as `cl.trail_depth_level_hist`
-        , clauseStats.`vsids_vars_hist` as `cl.vsids_vars_hist`
-        , clauseStats.`size_hist` as `cl.size_hist`
-        , clauseStats.`glue_hist` as `cl.glue_hist`
-        , clauseStats.`num_antecedents_hist` as `cl.num_antecedents_hist`
-        """
-
-        feat_dat = """
-        -- , features.`simplifications` as `feat.simplifications`
-        -- , features.`restarts` as `feat.restarts`
-        , features.`conflicts` as `feat.conflicts`
-        -- , features.`latest_feature_calc` as `feat.latest_feature_calc`
-        , features.`numVars` as `feat.numVars`
-        , features.`numClauses` as `feat.numClauses`
-        , features.`var_cl_ratio` as `feat.var_cl_ratio`
-        , features.`binary` as `feat.binary`
-        , features.`horn` as `feat.horn`
-        , features.`horn_mean` as `feat.horn_mean`
-        , features.`horn_std` as `feat.horn_std`
-        , features.`horn_min` as `feat.horn_min`
-        , features.`horn_max` as `feat.horn_max`
-        , features.`horn_spread` as `feat.horn_spread`
-        , features.`vcg_var_mean` as `feat.vcg_var_mean`
-        , features.`vcg_var_std` as `feat.vcg_var_std`
-        , features.`vcg_var_min` as `feat.vcg_var_min`
-        , features.`vcg_var_max` as `feat.vcg_var_max`
-        , features.`vcg_var_spread` as `feat.vcg_var_spread`
-        , features.`vcg_cls_mean` as `feat.vcg_cls_mean`
-        , features.`vcg_cls_std` as `feat.vcg_cls_std`
-        , features.`vcg_cls_min` as `feat.vcg_cls_min`
-        , features.`vcg_cls_max` as `feat.vcg_cls_max`
-        , features.`vcg_cls_spread` as `feat.vcg_cls_spread`
-        , features.`pnr_var_mean` as `feat.pnr_var_mean`
-        , features.`pnr_var_std` as `feat.pnr_var_std`
-        , features.`pnr_var_min` as `feat.pnr_var_min`
-        , features.`pnr_var_max` as `feat.pnr_var_max`
-        , features.`pnr_var_spread` as `feat.pnr_var_spread`
-        , features.`pnr_cls_mean` as `feat.pnr_cls_mean`
-        , features.`pnr_cls_std` as `feat.pnr_cls_std`
-        , features.`pnr_cls_min` as `feat.pnr_cls_min`
-        , features.`pnr_cls_max` as `feat.pnr_cls_max`
-        , features.`pnr_cls_spread` as `feat.pnr_cls_spread`
-        , features.`avg_confl_size` as `feat.avg_confl_size`
-        , features.`confl_size_min` as `feat.confl_size_min`
-        , features.`confl_size_max` as `feat.confl_size_max`
-        , features.`avg_confl_glue` as `feat.avg_confl_glue`
-        , features.`confl_glue_min` as `feat.confl_glue_min`
-        , features.`confl_glue_max` as `feat.confl_glue_max`
-        , features.`avg_num_resolutions` as `feat.avg_num_resolutions`
-        , features.`num_resolutions_min` as `feat.num_resolutions_min`
-        , features.`num_resolutions_max` as `feat.num_resolutions_max`
-        , features.`learnt_bins_per_confl` as `feat.learnt_bins_per_confl`
-        , features.`avg_branch_depth` as `feat.avg_branch_depth`
-        , features.`branch_depth_min` as `feat.branch_depth_min`
-        , features.`branch_depth_max` as `feat.branch_depth_max`
-        , features.`avg_trail_depth_delta` as `feat.avg_trail_depth_delta`
-        , features.`trail_depth_delta_min` as `feat.trail_depth_delta_min`
-        , features.`trail_depth_delta_max` as `feat.trail_depth_delta_max`
-        , features.`avg_branch_depth_delta` as `feat.avg_branch_depth_delta`
-        , features.`props_per_confl` as `feat.props_per_confl`
-        , features.`confl_per_restart` as `feat.confl_per_restart`
-        , features.`decisions_per_conflict` as `feat.decisions_per_conflict`
-        , features.`red_glue_distr_mean` as `feat.red_glue_distr_mean`
-        , features.`red_glue_distr_var` as `feat.red_glue_distr_var`
-        , features.`red_size_distr_mean` as `feat.red_size_distr_mean`
-        , features.`red_size_distr_var` as `feat.red_size_distr_var`
-        -- , features.`red_activity_distr_mean` as `feat.red_activity_distr_mean`
-        -- , features.`red_activity_distr_var` as `feat.red_activity_distr_var`
-        -- , features.`irred_glue_distr_mean` as `feat.irred_glue_distr_mean`
-        -- , features.`irred_glue_distr_var` as `feat.irred_glue_distr_var`
-        , features.`irred_size_distr_mean` as `feat.irred_size_distr_mean`
-        , features.`irred_size_distr_var` as `feat.irred_size_distr_var`
-        -- , features.`irred_activity_distr_mean` as `feat.irred_activity_distr_mean`
-        -- , features.`irred_activity_distr_var` as `feat.irred_activity_distr_var`
-        """
-
-        common_restrictions = """
-        and clauseStats.restarts > 1 -- to avoid history being invalid
-        and clauseStats.runID = {runid}
-        and features.runID = {runid}
-        and features.latest_feature_calc = clauseStats.latest_feature_calc
-        and restart.restarts = clauseStats.prev_restart
-        and restart.runID = {runid}
-        and tags.tagname = "filename"
-        and tags.runID = {runid}
-        and clauseStats.conflicts > {start_confl}
-        """
-
-        common_limits = """
-        order by random()
-        limit {limit}
-        """
-
-        q_count = "SELECT count(*)"
-        q_ok_select = """
-        SELECT
-        tags.tag as "fname"
-        {clause_dat}
-        {restart_dat}
-        {feat_dat}
-        , "OK" as `class`
-        """
-
-        q_ok = """
-        FROM
-        clauseStats
-        , goodClauses
-        , restart
-        , features
-        , tags
-        WHERE
-
-        clauseStats.clauseID = goodClauses.clauseID
-        and clauseStats.clauseID != 1
-        and clauseStats.runID = goodClauses.runID"""
-        q_ok += common_restrictions
-
-        # BAD caluses
-        q_bad_select = """
-        SELECT
-        tags.tag as "fname"
-        {clause_dat}
-        {restart_dat}
-        {feat_dat}
-        , "BAD" as `class`
-        """
-
-        q_bad = """
-        FROM clauseStats left join goodClauses
-        on clauseStats.clauseID = goodClauses.clauseID
-        and clauseStats.runID = goodClauses.runID
-        , restart
-        , features
-        , tags
-        WHERE
-
-        goodClauses.clauseID is NULL
-        and goodClauses.runID is NULL"""
-        q_bad += common_restrictions
-
-        myformat = {"runid" : self.runID,
-                "limit" : 1000*1000*1000,
-                "restart_dat": restart_dat,
-                "clause_dat": clause_dat,
-                "feat_dat": feat_dat,
-                "start_confl": options.start_conflicts}
-
-        t = time.time()
-
-        q = q_count + q_ok
-        q = q.format(**myformat)
-        if options.verbose:
-            print("query:", q)
-        cur = self.conn.execute(q.format(**myformat))
-        num_lines_ok = int(cur.fetchone()[0])
-        print("Num datapoints OK (K): %-3.5f" % (num_lines_ok/1000.0))
-
-        q = q_count + q_bad
-        q = q.format(**myformat)
-        if options.verbose:
-            print("query:", q)
-        cur = self.conn.execute(q.format(**myformat))
-        num_lines_bad = int(cur.fetchone()[0])
-        print("Num datpoints BAD (K): %-3.5f" % (num_lines_bad/1000.0))
-
-        total_lines = num_lines_ok + num_lines_bad
-        print("Total number of datapoints (K): %-3.2f" % (total_lines/1000.0))
-        if options.fixed_num_datapoints != -1:
-            if options.fixed_num_datapoints > total_lines:
-                print("WARNING -- Your fixed num datapoints is too high:", options.fixed_num_datapoints)
-                print("WARNING -- We only have:", total_lines)
-                print("WARNING --> Not returning data.")
-                return False, None
-
-        if total_lines == 0:
-            print("WARNING: Total number of datapoints is 0. Potential issues:")
-            print(" --> Minimum no. conflicts set too high")
-            print(" --> Less than 1 restarts were made")
-            print(" --> No conflicts in SQL")
-            print(" --> Something went wrong")
-            return False, None
-
-        print("Percentage of OK: %-3.2f" % (num_lines_ok/float(total_lines)*100.0))
-        q = q_ok_select + q_ok
-        if options.fixed_num_datapoints != -1:
-            myformat["limit"] = int(options.fixed_num_datapoints * num_lines_ok/float(total_lines))
-            q += common_limits
-
-        print("limit for OK:", myformat["limit"])
-        q = q.format(**myformat)
-        print("Running query for OK...")
-        if options.verbose:
-            print("query:", q)
-        df = pd.read_sql_query(q, self.conn)
-
-        q = q_bad_select + q_bad
-        if options.fixed_num_datapoints != -1:
-            myformat["limit"] = int(options.fixed_num_datapoints * num_lines_bad/float(total_lines))
-            q += common_limits
-
-        print("limit for bad:", myformat["limit"])
-        q = q.format(**myformat)
-        print("Running query for BAD...")
-        if options.verbose:
-            print("query:", q)
-        df2 = pd.read_sql_query(q, self.conn)
-        print("Queries finished. T: %-3.2f" % (time.time() - t))
-
-        if options.dump_sql:
-            print("-- query starts --")
-            print(q)
-            print("-- query ends --")
-
-        return True, pd.concat([df, df2])
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
 
 
-def get_one_file(dbfname):
-    print("Using sqlite3db file %s" % dbfname)
-
-    df = None
-    with Query2(dbfname) as q:
-        if not options.no_recreate_indexes:
-            q.create_indexes()
-        ok, df = q.get_clstats()
-        if not ok:
-            return False, None
-
-        if options.verbose:
-            print("Printing head:")
-            print(df.head())
-            print("Print head done.")
-
-    return True, df
+# to check for too large or NaN values:
+def check_too_large_or_nan_values(df):
+    features = df.columns.values.flatten().tolist()
+    index = 0
+    for index, row in df.iterrows():
+        for x, name in zip(row, features):
+            if not np.isfinite(x) or x > np.finfo(np.float32).max:
+                print("issue with data for features: ", name, x)
+            index += 1
 
 
-class Classify:
-    def __init__(self, df):
-        self.features = df.columns.values.flatten().tolist()
+def get_code(tree, feature_names):
+    left = tree.tree_.children_left
+    right = tree.tree_.children_right
+    threshold = tree.tree_.threshold
+    features = [feature_names[i] for i in tree.tree_.feature]
+    value = tree.tree_.value
 
-        toremove = ["cl.decision_level_hist",
-                    "cl.backtrack_level_hist",
-                    "cl.trail_depth_level_hist",
-                    "cl.vsids_vars_hist",
-                    "cl.size_hist",
-                    "cl.glue_hist",
-                    "cl.num_antecedents_hist",
-                    "cl.decision_level",
-                    "cl.backtrack_level",
-                    "class"]
-
-        toremove.extend(["cl.vsids_vars_avg",
-                         "cl.vsids_vars_var",
-                         "cl.vsids_vars_min",
-                         "cl.vsids_vars_max",
-                         "cl.vsids_of_resolving_literals_avg",
-                         "cl.vsids_of_resolving_literals_var",
-                         "cl.vsids_of_resolving_literals_min",
-                         "cl.vsids_of_resolving_literals_max",
-                         "cl.vsids_of_all_incoming_lits_avg",
-                         "cl.vsids_of_all_incoming_lits_var",
-                         "cl.vsids_of_all_incoming_lits_min",
-                         "cl.vsids_of_all_incoming_lits_max"])
-
-        for t in toremove:
-            if options.verbose:
-                print("removing feature:", t)
-            self.features.remove(t)
-
-        if options.verbose:
-            print("features:", self.features)
-        print("Number of features:", len(self.features))
-
-    def learn(self, df, cleanname, classifiername="classifier"):
-        print("total samples: %5d" % df.shape[0])
-
-        num_ok = df.loc[df['class'] == "OK"].shape[0]
-        num_bad = df.loc[df['class'] == "BAD"].shape[0]
-        if df.shape[0] > 0:
-            perc_good = "%-3.4f" % (float(num_ok) / float(df.shape[0]) * 100.0)
+    def recurse(left, right, threshold, features, node):
+        if (threshold[node] != -2):
+            print("if ( " + features[node] + " <= " + str(threshold[node]) + " ) {")
+            if left[node] != -1:
+                recurse(left, right, threshold, features, left[node])
+            print("} else {")
+            if right[node] != -1:
+                recurse(left, right, threshold, features, right[node])
+            print("}")
         else:
-            perc_good = "NaN"
-        print("percentage of good ones: %s" % perc_good)
+            print("return " + str(value[node]))
 
-        if df.shape[0] == 0:
-            return
-
-        df_lab = df.copy()
-        df_lab["fname"] = LabelEncoder().fit_transform(df_lab["fname"])
-        train, test = train_test_split(df_lab, test_size=0.2)
-        X_train = train[self.features]
-        y_train = train["class"]
-        X_test = test[self.features]
-        y_test = test["class"]
-
-        print("Training....")
-        t = time.time()
-        # self.clf = sklearn.KNeighborsClassifier(5) # EXPENSIVE at prediction, NOT suitable
-        # self.clf = sklearn.linear_model.LogisticRegression() # NOT good.
-        # self.clf = sklearn.ensemble.RandomForestClassifier(min_samples_split=len(X)/20, n_estimators=6)
-        # self.clf = sklearn.svm.SVC(max_iter=1000) # can't make it work too well..
-        self.clf = sklearn.tree.DecisionTreeClassifier(max_depth=options.tree_depth)
-        self.clf.fit(X_train, y_train)
-        print("Training finished. T: %-3.2f" % (time.time() - t))
-
-        print("Calculating scores....")
-        t = time.time()
-        y_pred = self.clf.predict(X_test)
-
-        # binarize the label OK/BAD
-        lb = sklearn.preprocessing.LabelBinarizer()
-        y_train = np.array([x[0] for x in lb.fit_transform(y_train)])
-        y_test = np.array([x[0] for x in lb.fit_transform(y_test)])
-        y_pred = np.array([x[0] for x in lb.fit_transform(y_pred)])
-
-        # calculate accuracy/prec/recall for TEST
-        accuracy = sklearn.metrics.accuracy_score(y_test, y_pred)
-        precision = sklearn.metrics.precision_score(y_test, y_pred)
-        recall = sklearn.metrics.recall_score(y_test, y_pred)
-        print("prec: %-3.4f  recall: %-3.4f accuracy: %-3.4f T: %-3.2f" %
-              (precision, recall, accuracy, (time.time() - t)))
-
-        # calculate accuracy/prec/recall for cross-validation
-        if options.cross_validate:
-            accuracy = sklearn.model_selection.cross_val_score(self.clf, X_train, y_train, cv=10)
-            precision = sklearn.model_selection.cross_val_score(self.clf, X_train, y_train, cv=10, scoring='precision')
-            recall = sklearn.model_selection.cross_val_score(self.clf, X_train, y_train, cv=10, scoring='recall')
-            print("cv-accuracy:", accuracy)
-            print("cv-precision:", precision)
-            print("cv-recall:", recall)
-            accuracy = np.mean(accuracy)
-            precision = np.mean(precision)
-            recall = np.mean(recall)
-            print("cv-prec: %-3.4f  cv-recall: %-3.4f cv-accuracy: %-3.4f T: %-3.2f" %
-                  (precision, recall, accuracy, (time.time() - t)))
-
-        # dump the classifier
-        with open(classifiername, "wb") as f:
-            pickle.dump(self.clf, f)
-
-    def output_to_dot(self, fname):
-        sklearn.tree.export_graphviz(self.clf, out_file=fname,
-                                     feature_names=self.features,
-                                     class_names=["BAD", "OK"],
-                                     filled=True, rounded=True,
-                                     special_characters=True,
-                                     proportion=True
-                                     )
-        print("Run dot:")
-        print("dot -Tpng {fname} -o {fname}.png".format(fname=fname))
+    recurse(left, right, threshold, features, 0)
 
 
-class Check:
-    def __init__(self, classf_fname):
-        with open(classf_fname, "rb") as f:
-            self.clf = pickle.load(f)
+def one_classifier(df, features, to_predict, names, w_name, w_number, final):
+    print("================ predicting %s ================" % to_predict)
+    print("-> Number of features  :", len(features))
+    print("-> Number of datapoints:", df.shape)
+    print("-> Predicting          :", to_predict)
 
-    def check(self, X, y):
-        print("total samples: %5d   percentage of good ones %-3.2f" %
-              (len(X), sum(y) / float(len(X)) * 100.0))
+    train, test = train_test_split(df, test_size=0.33)
+    X_train = train[features]
+    y_train = train[to_predict]
+    X_test = test[features]
+    y_test = test[to_predict]
 
-        t = time.time()
-        y_pred = self.clf.predict(X)
-        recall = sklearn.metrics.recall_score(y, y_pred)
-        prec = sklearn.metrics.precision_score(y, y_pred)
-        # avg_prec = self.clf.score(X, y)
-        print("prec: %-3.3f  recall: %-3.3f T: %-3.2f" %
-              (prec, recall, (time.time() - t)))
+    t = time.time()
+    clf = None
+    # clf = sklearn.linear_model.LogisticRegression()
+    # clf = sklearn.svm.SVC()
+    if final:
+        clf = sklearn.tree.DecisionTreeClassifier(max_depth=options.tree_depth)
+    else:
+        clf = sklearn.ensemble.RandomForestClassifier(n_estimators=80)
+        #clf = sklearn.ensemble.ExtraTreesClassifier(n_estimators=80)
 
+    sample_weight = [w_number if i == w_name else 1 for i in y_train]
+    clf.fit(X_train, y_train, sample_weight=sample_weight)
 
-def transform(df):
-    def check_clstat_row(self, row):
-        if row[self.ntoc["cl.decision_level_hist"]] == 0 or \
-                row[self.ntoc["cl.backtrack_level_hist"]] == 0 or \
-                row[self.ntoc["cl.trail_depth_level_hist"]] == 0 or \
-                row[self.ntoc["cl.vsids_vars_hist"]] == 0 or \
-                row[self.ntoc["cl.size_hist"]] == 0 or \
-                row[self.ntoc["cl.glue_hist"]] == 0 or \
-                row[self.ntoc["cl.num_antecedents_hist"]] == 0:
-            print("ERROR: Data is in error:", row)
-            assert(False)
-            exit(-1)
+    print("Training finished. T: %-3.2f" % (time.time() - t))
 
-        return row
+    best_features = []
+    if not final:
+        importances = clf.feature_importances_
+        std = np.std([tree.feature_importances_ for tree in clf.estimators_], axis=0)
+        indices = np.argsort(importances)[::-1]
+        indices = indices[:options.top_num_features]
+        myrange = min(X_train.shape[1], options.top_num_features)
 
-    df["cl.size_rel"] = df["cl.size"] / df["cl.size_hist"]
-    df["cl.glue_rel"] = df["cl.glue"] / df["cl.glue_hist"]
-    df["cl.num_antecedents_rel"] = df["cl.num_antecedents"] / \
-        df["cl.num_antecedents_hist"]
-    df["cl.decision_level_rel"] = df["cl.decision_level"] / df["cl.decision_level_hist"]
-    df["cl.backtrack_level_rel"] = df["cl.backtrack_level"] / \
-        df["cl.backtrack_level_hist"]
-    df["cl.backtrack_level_smaller_than_hist"] = df["cl.backtrack_level"] < \
-        df["cl.backtrack_level_hist"]
-    df["cl.glue_smaller_than_hist"] = df["cl.glue"] < \
-        df["cl.glue_hist"]
-    df["cl.trail_depth_level_rel"] = df["cl.trail_depth_level"] / \
-        df["cl.trail_depth_level_hist"]
-    df["cl.vsids_vars_rel"] = df["cl.vsids_vars_avg"] / df["cl.vsids_vars_hist"]
+        # Print the feature ranking
+        print("Feature ranking:")
 
-    old = set(df.columns.values.flatten().tolist())
-    df = df.dropna(how="all")
-    new = set(df.columns.values.flatten().tolist())
-    if len(old - new) > 0:
-        print("ERROR: a NaN number turned up")
-        print("columns: ", (old - new))
-        assert(False)
-        exit(-1)
+        for f in range(myrange):
+            print("%-3d  %-35s -- %8.4f" %
+                  (f + 1, features[indices[f]], importances[indices[f]]))
+            best_features.append(features[indices[f]])
 
-    # making sure "class" is the last one
-    new_no_class = list(new)
-    new_no_class.remove("class")
-    df = df[new_no_class + ["class"]]
+        # Plot the feature importances of the clf
+        plt.figure()
+        plt.title("Feature importances")
+        plt.bar(range(myrange), importances[indices],
+                color="r", align="center"
+                , yerr=std[indices])
+        plt.xticks(range(myrange), [features[x] for x in indices], rotation=45)
+        plt.xlim([-1, myrange])
+    else:
+        get_code(clf, features)
 
-    return df
+    print("Calculating scores....")
+    y_pred = clf.predict(X_test)
+    accuracy = sklearn.metrics.accuracy_score(y_test, y_pred)
+    precision = sklearn.metrics.precision_score(y_test, y_pred, average="macro")
+    recall = sklearn.metrics.recall_score(y_test, y_pred, average="macro")
+    print("prec: %-3.4f  recall: %-3.4f accuracy: %-3.4f T: %-3.2f" % (
+        precision, recall, accuracy, (time.time() - t)))
 
+    if options.confusion:
+        sample_weight = [w_number if i == w_name else 1 for i in y_pred]
+        cnf_matrix = sklearn.metrics.confusion_matrix(
+            y_test, y_pred, labels=names, sample_weight=sample_weight)
 
-def dump_dataframe(df, name):
-    if options.dump_csv:
-        fname = "%s.csv" % name
-        print("Dumping CSV data to:", fname)
-        df.to_csv(fname, index=False)
+        np.set_printoptions(precision=2)
 
-        # fname = "%s-pandasdata.dat" % name
-        # print("Dumping pandas data to:", fname)
-        # with open(fname, "wb") as f:
-        #     pickle.dump(df, f)
+        # Plot non-normalized confusion matrix
+        plt.figure()
+        plot_confusion_matrix(
+            cnf_matrix, classes=names,
+            title='Confusion matrix, without normalization')
 
+        # Plot normalized confusion matrix
+        plt.figure()
+        plot_confusion_matrix(
+            cnf_matrix, classes=names, normalize=True,
+            title='Normalized confusion matrix')
 
-def one_predictor(dbfname):
-    ok, df = get_one_file(dbfname)
-    if not ok:
-        return False, None
+    # TODO do L1 regularization
 
-    cleanname = re.sub('\.cnf.gz.sqlite$', '', dbfname)
-
-    if options.verbose:
-        print("Describing----")
-        dat = df.describe()
-        print(dat)
-        print("Describe done.---")
-        print("Features: ", df.columns.values.flatten().tolist())
-
-    df = transform(df)
-
-    if options.verbose:
-        print("Describing post-transform ----")
-        print(df.describe())
-        print("Describe done.---")
-
-    dump_dataframe(df, cleanname)
-
-    # display
     if False:
+        calc_cross_val()
+
+    if options.dot is not None and final:
+        output_to_dot(clf, features, names[0])
+
+    return best_features
+
+
+def remove_old_clause_features(features):
+    todel = []
+    for name in features:
+        if "cl2" in name or "cl3" in name or "cl4" in name:
+            todel.append(name)
+
+    for x in todel:
+        features.remove(x)
+        if options.verbose:
+            print("Removing old clause feature:", x)
+
+
+def rem_features(feat, to_remove):
+    feat_less = list(feat)
+    todel = []
+    for feature in feat:
+        for rem in to_remove:
+            if rem in feature:
+                feat_less.remove(feature)
+                if options.verbose:
+                    print("Removing feature from feat_less:", feature)
+
+    return feat_less
+
+
+def learn(fname):
+    with open(fname, "rb") as f:
+        df = pickle.load(f)
+
+    if options.check_row_data:
+        check_too_large_or_nan_values(df)
+
+    print("total samples: %5d" % df.shape[0])
+
+    # lifetime to predict
+    df["x.lifetime_cut"] = pd.cut(
+        df["x.lifetime"],
+        cuts,
+        labels=class_names)
+
+    df["x.lifetime_cut2"] = pd.cut(
+        df["x.lifetime"],
+        cuts2,
+        labels=class_names2)
+
+    df["x.lifetime_cut3"] = pd.cut(
+        df["x.lifetime"],
+        cuts3,
+        labels=class_names3)
+
+    features = df.columns.values.flatten().tolist()
+    features = rem_features(features,
+                            ["x.num_used", "x.class", "x.lifetime", "fname"])
+
+    # this needs binarization
+    features = rem_features(features, ["cl.cur_restart_type"])
+    # x = (df["cl.cur_restart_type"].values[:, np.newaxis] == df["cl.cur_restart_type"].unique()).astype(int)
+    # print(x)
+
+    if True:
+        remove_old_clause_features(features)
+
+    if options.raw_data_plots:
         pd.options.display.mpl_style = "default"
         df.hist()
         df.boxplot()
 
-    if options.check:
-        check = Check(options.check)
-        check.check(df)
-    else:
-        if not options.no_predict:
-            clf = Classify(df)
-            clf.learn(df, "%s.classifier" % cleanname)
-            clf.output_to_dot("%s.tree.dot" % cleanname)
+    if options.only_pred is None or options.only_pred == 1:
+        feat_less = rem_features(features, ["rdb1", "rdb2", "rdb3", "rdb4"])
+        best_feats = one_classifier(df, feat_less, "x.lifetime_cut",
+                                    class_names, "longer", 17,
+                                    False)
+        if options.show:
+            plt.show()
 
-    return True, df
+        one_classifier(df, best_feats, "x.lifetime_cut",
+                       class_names, "longer", 3,
+                       True)
+        if options.show:
+            plt.show()
+
+    if options.only_pred is None or options.only_pred == 2:
+        feat_less = rem_features(features, ["rdb3", "rdb4"])
+        df2 = df[df["x.lifetime"] > cuts[1]]
+
+        best_feats = one_classifier(df2, feat_less, "x.lifetime_cut2",
+                                    class_names2, "middle", 30,
+                                    False)
+        if options.show:
+            plt.show()
+
+        one_classifier(df2, best_feats, "x.lifetime_cut2",
+                       class_names2, "middle", 4,
+                       True)
+
+        if options.show:
+            plt.show()
+
+    if options.only_pred is None or options.only_pred == 3:
+        df3 = df[df["x.lifetime"] > cuts2[1]]
+
+        best_feats = one_classifier(df3, features, "x.lifetime_cut3",
+                                    class_names3, "middle2", 8,
+                                    False)
+        if options.show:
+            plt.show()
+
+        one_classifier(df3, best_feats, "x.lifetime_cut3",
+                       class_names3, "middle2", 2,
+                       True)
+
+        if options.show:
+            plt.show()
 
 
 if __name__ == "__main__":
-    usage = "usage: %prog [options] file1.sqlite [file2.sqlite ...]"
+    usage = "usage: %prog [options] file.pandas"
     parser = optparse.OptionParser(usage=usage)
 
     parser.add_option("--verbose", "-v", action="store_true", default=False,
                       dest="verbose", help="Print more output")
-
-    parser.add_option("--csv", action="store_true", default=False,
-                      dest="dump_csv", help="Dump CSV (for weka)")
-
     parser.add_option("--cross", action="store_true", default=False,
                       dest="cross_validate", help="Cross-validate prec/recall/acc against training data")
-
-    parser.add_option("--sql", action="store_true", default=False,
-                      dest="dump_sql", help="Dump SQL query")
-
-    parser.add_option("--fixed", default=-1, type=int,
-                      dest="fixed_num_datapoints", help="Exact number of examples to take. -1 is to take all. Default: %default")
-    parser.add_option("--start", default=-1, type=int,
-                      dest="start_conflicts", help="Only consider clauses from conflicts that are at least this high")
-
-
-    parser.add_option("--depth", default=5, type=int,
+    parser.add_option("--depth", default=6, type=int,
                       dest="tree_depth", help="Depth of the tree to create")
-
-    parser.add_option("--check", "-c", type=str,
-                      dest="check", help="Check classifier")
-
-    parser.add_option("--noind", action="store_true", default=False,
-                      dest="no_recreate_indexes", help="Don't recreate indexes")
-
-    parser.add_option("--nopredict", action="store_true", default=False,
-                      dest="no_predict", help="Don't create predictive model")
+    parser.add_option("--dot", type=str, default=None,
+                      dest="dot", help="Create DOT file")
+    parser.add_option("--conf", action="store_true", default=False,
+                      dest="confusion", help="Create confusion matrix")
+    parser.add_option("--show", action="store_true", default=False,
+                      dest="show", help="Show visual graphs")
+    parser.add_option("--check", action="store_true", default=False,
+                      dest="check_row_data", help="Check row data for NaN or float overflow")
+    parser.add_option("--rawplots", action="store_true", default=False,
+                      dest="raw_data_plots", help="Display raw data plots")
+    parser.add_option("--only", default=None, type=int,
+                      dest="only_pred", help="Only this predictor")
+    parser.add_option("--top", default=12, type=int,
+                      dest="top_num_features", help="Number of top features to take to generate the final predictor")
 
     (options, args) = parser.parse_args()
 
     if len(args) < 1:
-        print("ERROR: You must give at least one file")
+        print("ERROR: You must give the pandas file!")
         exit(-1)
 
-    np.random.seed(2097483)
-    dfs = []
-    for dbfname in args:
-        print("----- INTERMEDIATE predictor -------")
-        ok, df = one_predictor(dbfname)
-        if ok:
-            dfs.append(df)
-
-    if len(dfs) == 0:
-        print("Error, nothing got ingested, something is off")
-        exit(-1)
-
-    # intermediate predictor is final
-    if len(args) == 1:
-        exit(0)
-
-    # no need, we checked them all individually
-    if options.check:
-        exit(0)
-
-    print("----- FINAL predictor -------")
-    if len(dfs) == 0:
-        print("Ooops, final predictor is None, probably no meaningful data. Exiting.")
-        exit(0)
-
-    final_df = pd.concat(dfs)
-    dump_dataframe(final_df, "final")
-    if options.check:
-        check = Check()
-        check.check(final_df)
-    else:
-        clf = Classify(final_df)
-        if not options.no_predict:
-            clf.learn(final_df, "final.classifier")
-            clf.output_to_dot("final.dot")
+    learn(args[0])

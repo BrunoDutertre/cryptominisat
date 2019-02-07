@@ -89,6 +89,22 @@ public:
         return !operator==(other);
     }
 
+    bool operator<(const Xor& other) const
+    {
+        uint64_t i = 0;
+        while(i < other.size() && i < size()) {
+            if (other[i] != vars[i]) {
+                return (other[i] > vars[i]);
+            }
+            i++;
+        }
+
+        if (other.size() != size()) {
+            return size() < other.size();
+        }
+        return false;
+    }
+
     const uint32_t& operator[](const uint32_t at) const
     {
         return vars[at];
@@ -102,6 +118,16 @@ public:
     void resize(const uint32_t newsize)
     {
         vars.resize(newsize);
+    }
+
+    vector<uint32_t>& get_vars()
+    {
+        return vars;
+    }
+
+    const vector<uint32_t>& get_vars() const
+    {
+        return vars;
     }
 
     size_t size() const
