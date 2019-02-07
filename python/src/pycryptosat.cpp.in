@@ -93,13 +93,13 @@ Create Solver object.\n\
 
 static SATSolver* setup_solver(PyObject *args, PyObject *kwds)
 {
-    static char* kwlist[] = {"verbose", "time_limit", "confl_limit", "threads", NULL};
+    static const char* kwlist[] = {"verbose", "time_limit", "confl_limit", "threads", NULL};
 
     int verbose = 0;
     int num_threads = 1;
     double time_limit = std::numeric_limits<double>::max();
     long confl_limit = std::numeric_limits<long>::max();
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|idli", kwlist, &verbose, &time_limit, &confl_limit, &num_threads)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|idli", (char**)kwlist, &verbose, &time_limit, &confl_limit, &num_threads)) {
         return NULL;
     }
     if (verbose < 0) {
@@ -215,7 +215,7 @@ static int parse_xor_clause(
             return 0;
         }
         if (sign) {
-            PyErr_SetString(PyExc_ValueError, "XOR clause must contiain only positive variables (not inverted literals)");
+            PyErr_SetString(PyExc_ValueError, "XOR clause must contain only positive variables (not inverted literals)");
             Py_DECREF(iterator);
             return 0;
         }
@@ -242,11 +242,11 @@ Start getting clauses."
 );
 static PyObject* start_getting_small_clauses(Solver *self, PyObject *args, PyObject *kwds)
 {
-    static char* kwlist[] = {"max_len", "max_glue", NULL};
+    static const char* kwlist[] = {"max_len", "max_glue", NULL};
 
     unsigned max_len;
     unsigned max_glue;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "II", kwlist, &max_len, &max_glue)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "II", (char**)kwlist, &max_len, &max_glue)) {
         return NULL;
     }
 
@@ -328,9 +328,9 @@ Add a clause to the solver.\n\
 
 static PyObject* add_clause(Solver *self, PyObject *args, PyObject *kwds)
 {
-    static char* kwlist[] = {"clause", NULL};
+    static const char* kwlist[] = {"clause", NULL};
     PyObject *clause;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist, &clause)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", (char**)kwlist, &clause)) {
         return NULL;
     }
 
@@ -357,9 +357,9 @@ static int _add_clauses_from_array(Solver *self, const size_t array_length, cons
     std::vector<Lit>& lits = self->tmp_cl_lits;
     for (val = (long) array[k]; k < array_length; val = (long) array[++k]) {
         lits.clear();
-        long int max_var = 0;
+        uint32_t max_var = 0;
         for (; k < array_length && val != 0; val = (long) array[++k]) {
-            long var;
+            uint32_t var;
             bool sign;
             if (val > std::numeric_limits<int>::max()/2
                 || val < std::numeric_limits<int>::min()/2
@@ -369,14 +369,14 @@ static int _add_clauses_from_array(Solver *self, const size_t array_length, cons
             }
 
             sign = (val < 0);
-            var = std::abs(val) - 1;
+            var = (uint32_t) std::abs(val) - 1;
             max_var = std::max(var, max_var);
 
             lits.push_back(Lit(var, sign));
         }
         if (!lits.empty()) {
-            if (max_var >= (long int)self->cmsat->nVars()) {
-                self->cmsat->new_vars(max_var-(long int)self->cmsat->nVars()+1);
+	  if (max_var >= (uint32_t) self->cmsat->nVars()) {
+                self->cmsat->new_vars(max_var-(uint32_t)self->cmsat->nVars()+1);
             }
             self->cmsat->add_clause(lits);
         }
@@ -472,7 +472,7 @@ static int add_clauses_array(Solver *self, PyObject *clauses)
         PyErr_SetString(PyExc_ValueError, "invalid clause array: could not get itemsize");
         return 0;
     }
-    PyObject *buffer_info = PyObject_CallMethod(clauses, "buffer_info", NULL);
+    PyObject *buffer_info = PyObject_CallMethod(clauses, (char*)"buffer_info", NULL);
     if (buffer_info == NULL) {
         PyErr_SetString(PyExc_ValueError, "invalid clause array: buffer_info is NULL");
         return 0;
@@ -496,10 +496,10 @@ Add iterable of clauses to the solver.\n\
 
 static PyObject* add_clauses(Solver *self, PyObject *args, PyObject *kwds)
 {
-    static char* kwlist[] = {"clauses", "max_var", NULL};
+    static const char* kwlist[] = {"clauses", "max_var", NULL};
     PyObject *clauses;
     long int max_var = 0;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|l", kwlist, &clauses, &max_var)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|l", (char**)kwlist, &clauses, &max_var)) {
         return NULL;
     }
     if (max_var > (long int)self->cmsat->nVars()) {
@@ -544,10 +544,10 @@ static PyObject* add_clauses(Solver *self, PyObject *args, PyObject *kwds)
 
 static PyObject* add_xor_clause(Solver *self, PyObject *args, PyObject *kwds)
 {
-    static char* kwlist[] = {"xor_clause", "rhs", NULL};
+    static const char* kwlist[] = {"xor_clause", "rhs", NULL};
     PyObject *rhs;
     PyObject *clause;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO", kwlist, &clause, &rhs)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO", (char**)kwlist, &clause, &rhs)) {
         return NULL;
     }
     if (!PyBool_Check(rhs)) {
@@ -732,8 +732,8 @@ Solve the system of equations that have been added with add_clause();\n\
 static PyObject* solve(Solver *self, PyObject *args, PyObject *kwds)
 {
     PyObject* assumptions = NULL;
-    static char* kwlist[] = {"assumptions", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", kwlist, &assumptions)) {
+    static const char* kwlist[] = {"assumptions", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", (char**)kwlist, &assumptions)) {
         return NULL;
     }
 
@@ -783,7 +783,7 @@ static PyObject* solve(Solver *self, PyObject *args, PyObject *kwds)
         // res can only be l_False, l_True, l_Undef
         assert((res == l_False) || (res == l_True) || (res == l_Undef));
         Py_DECREF(result);
-        return PyErr_NewExceptionWithDoc("pycyrptosat.IllegalState", "Error Occurred in CyrptoMiniSat", NULL, NULL);
+        return PyErr_NewExceptionWithDoc((char*)"pycyrptosat.IllegalState", (char*)"Error Occurred in CyrptoMiniSat", NULL, NULL);
     }
 
     return result;
@@ -856,11 +856,11 @@ static PyObject* msolve_selected(Solver *self, PyObject *args, PyObject *kwds)
     int raw_solutions_activated = true;
     PyObject *var_selected;
 
-    static char* kwlist[] = {"max_nr_of_solutions", "var_selected", "raw", NULL};
+    static const char* kwlist[] = {"max_nr_of_solutions", "var_selected", "raw", NULL};
 
     #ifdef IS_PY3K
     // Use 'p' wildcard for the boolean on version 3.3+ of Python
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "iO|p", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "iO|p", (char**)kwlist,
                                      &max_nr_of_solutions,
                                      &var_selected,
                                      &raw_solutions_activated)) {
@@ -870,7 +870,7 @@ static PyObject* msolve_selected(Solver *self, PyObject *args, PyObject *kwds)
     // Use 'i' wildcard for the boolean on version 2.x of Python
     // O (object) [PyObject *] : Store a Python object (without any conversion) in a C object pointer.
     // https://docs.python.org/2/c-api/arg.html
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "iO|i", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "iO|i", (char**)kwlist,
                                      &max_nr_of_solutions,
                                      &var_selected,
                                      &raw_solutions_activated)) {
@@ -975,7 +975,7 @@ static PyMethodDef Solver_methods[] = {
     {"start_getting_small_clauses", (PyCFunction) start_getting_small_clauses, METH_VARARGS | METH_KEYWORDS, start_getting_small_clauses_doc},
     {"get_next_small_clause", (PyCFunction) get_next_small_clause, METH_VARARGS | METH_KEYWORDS, get_next_small_clause_doc},
     {"end_getting_small_clauses", (PyCFunction) end_getting_small_clauses, METH_VARARGS | METH_KEYWORDS, end_getting_small_clauses_doc},
-    {NULL,        NULL}  /* sentinel - marks the end of this structure */
+    {NULL, NULL, 0, NULL}  /* sentinel - marks the end of this structure */
 };
 
 static void
@@ -1018,7 +1018,7 @@ static PyMemberDef Solver_members[] = {
      "last name"},
     {"number", T_INT, offsetof(Noddy, number), 0,
      "noddy number"},*/
-    {NULL}  /* Sentinel */
+  {NULL, 0, 0, 0, NULL}  /* Sentinel */
 };
 
 static PyTypeObject pycryptosat_SolverType = {
@@ -1060,6 +1060,15 @@ static PyTypeObject pycryptosat_SolverType = {
     (initproc)Solver_init,      /* tp_init */
     0,                          /* tp_alloc */
     Solver_new,                 /* tp_new */
+    0,                          /* tp_free: CHECK THIS */
+    0,                          /* tp_is_gc */
+    0,                          /* tp_bases */
+    0,                          /* tp_mro */
+    0,                          /* tp_cache */
+    0,                          /* tp_subclasses */
+    0,                          /* tp_weaklist */
+    0,                          /* tp_allocs */
+    0,                          /* tp_frees */
 };
 
 MODULE_INIT_FUNC(pycryptosat)
