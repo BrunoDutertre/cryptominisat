@@ -121,7 +121,7 @@ typedef struct cmsat_val_vector {
 /*
  * Allocate and free a sat_solver instance
  */
-extern CMS_DLL_PUBLIC cmsat_solver *cmsat_new_solver(void);
+extern CMS_DLL_PUBLIC cmsat_solver_t *cmsat_new_solver(void);
 extern CMS_DLL_PUBLIC void cmsat_free_solver(cmsat_solver_t *s);
 
 /*
