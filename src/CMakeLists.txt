@@ -199,7 +199,7 @@ if (IPASIR)
 
 endif()
 
-cmsat_add_public_header(cryptominisat5 ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat_c.h )
+cmsat_add_public_header(cryptominisat5 ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cmsat_c.h )
 cmsat_add_public_header(cryptominisat5 ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat.h )
 cmsat_add_public_header(cryptominisat5 ${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/solvertypesmini.h )
 cmsat_add_public_header(cryptominisat5 ${CMAKE_CURRENT_SOURCE_DIR}/dimacsparser.h )
