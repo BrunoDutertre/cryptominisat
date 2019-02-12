@@ -55,7 +55,7 @@ endif()
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/GitSHA1.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp" @ONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cryptominisat.h.in" "${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat.h" @ONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/solvertypesmini.h.in" "${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/solvertypesmini.h" @ONLY)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cryptominisat_c.h.in" "${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cryptominisat_c.h" @ONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmsat_c.h" "${CMAKE_CURRENT_BINARY_DIR}/cryptominisat5/cmsat_c.h" @ONLY)
 
 if (SQLITE3_FOUND AND STATS)
     if (NOT PYTHON_EXECUTABLE)
@@ -107,7 +107,7 @@ set(cryptoms_lib_files
     solvefeatures.cpp
     searchstats.cpp
     xorfinder.cpp
-    cryptominisat_c.cpp
+    cmsat_c.cpp
 #    watcharray.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp
 )
