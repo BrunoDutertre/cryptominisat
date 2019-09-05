@@ -399,7 +399,7 @@ bool DimacsParser<C>::parse_and_add_clause(C& in)
     if (!readClause(in)) {
         return false;
     }
-    in.skipWhitespace();
+    in.skipOnlyWhitespace();
     if (!in.skipEOL(lineNum)) {
         return false;
     }

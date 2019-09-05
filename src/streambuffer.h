@@ -114,6 +114,17 @@ public:
         }
     }
 
+    void skipOnlyWhitespace()
+    {
+      // BD: this variant does not consume the end-of-line characters
+      // after a clause
+        char c = value();
+        while (c == '\t' || c == ' ') {
+            advance();
+            c = value();
+        }
+    }
+
     void skipLine()
     {
         for (;;) {

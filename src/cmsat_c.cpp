@@ -200,7 +200,7 @@ CMS_DLL_PUBLIC int32_t cmsat_add_clause(cmsat_solver_t *s, const uint32_t *a, ui
 }
 
 /*
- * Add an xor close
+ * Add an xor clause
  * - n = number of variables in the clause
  * - a = array of n variables
  * - the clause is (xor a[0] .... a[n-1]) == rhs
