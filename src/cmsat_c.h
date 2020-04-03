@@ -238,11 +238,6 @@ extern CMS_DLL_PUBLIC void cmsat_free_val_vector(cmsat_val_vector_t *v);
  */
 extern CMS_DLL_PUBLIC void cmsat_get_conflict(const cmsat_solver_t *s, cmsat_lit_vector_t *c);
 
-/*
- * Delete literal vector v: this frees array v->lit
- */
-extern CMS_DLL_PUBLIC void cmsat_free_val_vector(cmsat_val_vector_t *v);
-
 
 #ifdef __cplusplus
 } /* close extern "C" { */
