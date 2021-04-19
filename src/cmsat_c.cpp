@@ -90,7 +90,7 @@ CMS_DLL_PUBLIC int32_t cmsat_set_num_threads(cmsat_solver_t *s, uint32_t n) {
   
   try {
     s->solver.set_num_threads(n);
-  } catch (std::runtime_error) {
+  } catch (std::runtime_error const&) {
     code = -1;
   }
 
