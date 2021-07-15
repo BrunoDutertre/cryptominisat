@@ -131,6 +131,7 @@ void printUsage(char** argv)
     cout << "  --drat          = {fname} DRAT dumped to file\n";
     cout << "  --gluebreak     = {0,1}   Break the glue-based restarts\n";
     cout << "  --threads       = [1...]  Sets number of threads\n";
+    cout << "  --no-model                Dont't print the model on stdout\n";
     cout << "\n";
 }
 
@@ -148,6 +149,7 @@ int main(int argc, char** argv)
     SolverConf conf;
     conf.verbosity = 1;
     dratf = NULL;
+    bool printModel = true;
 
     int i, j;
     long int num_threads = 1;
@@ -199,6 +201,8 @@ int main(int argc, char** argv)
             conf.reconfigure_val = reconf;
         }else if (strcmp(argv[i], "--zero-exit-status") == 0){
             zero_exit_status = true;
+	} else if (strcmp(argv[i], "--no-model") == 0) {
+	    printModel = false;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "-help") == 0 || strcmp(argv[i], "--help") == 0){
             printUsage(argv);
             exit(0);
@@ -302,7 +306,7 @@ int main(int argc, char** argv)
         cout << "s UNSATISFIABLE"<< endl;
     }
 
-    if (ret == l_True) {
+    if (ret == l_True && printModel) {
         print_model(&std::cout, solver);
     }
 
